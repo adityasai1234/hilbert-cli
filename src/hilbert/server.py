@@ -151,6 +151,24 @@ class IPCServer:
                 })
             return logs
 
+        elif command == "replicate":
+            paper = args[0] if args else options.get("paper", "")
+            log(f"Planning replication: {paper}")
+            return {
+                "files": [
+                    f"{settings.output_dir}/replicate-plan.md",
+                ],
+            }
+
+        elif command == "audit":
+            item = args[0] if args else options.get("item", "")
+            log(f"Running audit: {item}")
+            return {
+                "files": [
+                    f"{settings.output_dir}/audit.md",
+                ],
+            }
+
         return {"error": f"Unknown command: {command}"}
 
     async def send_response(self, msg_id: str, result: Any, msg_type: str = "response"):

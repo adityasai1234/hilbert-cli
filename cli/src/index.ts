@@ -76,6 +76,31 @@ program
   });
 
 program
+  .command('replicate <paper>')
+  .description('Plan and execute paper replication')
+  .option('-m, --model <model>', 'LLM model to use')
+  .action(async (paper, options) => {
+    const { runReplicate } = await import('./commands/replicate');
+    await runReplicate(paper, options);
+  });
+
+program
+  .command('audit <item>')
+  .description('Audit paper claims against code')
+  .option('-m, --model <model>', 'LLM model to use')
+  .action(async (item, options) => {
+    const { runAudit } = await import('./commands/audit');
+    await runAudit(item, options);
+  });
+
+program
+  .command('jobs')
+  .description('List background jobs')
+  .action(async () => {
+    console.log('  No active jobs');
+  });
+
+program
   .argument('[query]', 'Research query (runs in one-shot mode)')
   .action(async (query) => {
     if (query) {

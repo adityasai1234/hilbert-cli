@@ -1,5 +1,13 @@
 """Rich terminal UI for Hilbert."""
 
+from hilbert.ui.theme import COLORS, terminal_width
+from hilbert.ui.banner import (
+    create_welcome_banner,
+    create_status_banner,
+    create_header,
+    print_banner,
+    print_header as print_banner_header,
+)
 from hilbert.ui.panels import (
     HilbertPanels,
     get_hilbert_console,
@@ -24,8 +32,22 @@ from hilbert.ui.mermaid import (
     render_findings_mermaid,
     render_sources_mermaid,
 )
+from hilbert.ui.tables import (
+    create_deps_table,
+    create_sessions_table,
+    create_findings_table,
+    create_papers_table,
+    create_progress_table,
+)
 
 __all__ = [
+    "COLORS",
+    "terminal_width",
+    "create_welcome_banner",
+    "create_status_banner",
+    "create_header",
+    "print_banner",
+    "print_banner_header",
     "HilbertPanels",
     "get_hilbert_console",
     "print_info",
@@ -45,4 +67,9 @@ __all__ = [
     "render_research_flow",
     "render_findings_mermaid",
     "render_sources_mermaid",
+    "create_deps_table",
+    "create_sessions_table",
+    "create_findings_table",
+    "create_papers_table",
+    "create_progress_table",
 ]

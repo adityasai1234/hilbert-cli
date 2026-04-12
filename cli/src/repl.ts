@@ -21,11 +21,23 @@ export async function startRepl(): Promise<void> {
   printBanner();
 
   try {
+    console.log(chalk.cyan('  Starting backend...'));
     await ipcClient.connect();
-    console.log(chalk.green('  Connected to backend\n'));
+    console.log(chalk.green('  ✓ Connected to backend\n'));
   } catch (err) {
-    console.log(chalk.yellow('  Running in offline mode\n'));
+    console.log(chalk.yellow('  ✗ Could not connect to backend\n'));
   }
+
+  process.on('SIGINT', () => {
+    ipcClient.disconnect();
+    console.log(chalk.gray('\n  Shutting down...'));
+    process.exit(0);
+  });
+
+  process.on('SIGTERM', () => {
+    ipcClient.disconnect();
+    process.exit(0);
+  });
 
   let running = true;
 
@@ -52,6 +64,7 @@ export async function startRepl(): Promise<void> {
         case '/quit':
         case '/exit':
           running = false;
+          ipcClient.disconnect();
           console.log(chalk.gray('  Goodbye!'));
           break;
         case '/help':
@@ -118,7 +131,7 @@ async function runDeepResearch(topic: string): Promise<void> {
       console.log(chalk.red(`  Error: ${result.error}`));
     }
   } catch (err) {
-    console.log(chalk.yellow('  (Backend not connected - run hilbert server first)'));
+    console.log(chalk.yellow('  (Backend not available - is Python installed?)'));
   }
 }
 
@@ -138,7 +151,7 @@ async function runLiteratureReview(topic: string): Promise<void> {
       console.log(chalk.red(`  Error: ${result.error}`));
     }
   } catch (err) {
-    console.log(chalk.yellow('  (Backend not connected - run hilbert server first)'));
+    console.log(chalk.yellow('  (Backend not available - run hilbert server first)'));
   }
 }
 
@@ -158,7 +171,7 @@ async function runCompare(topic: string): Promise<void> {
       console.log(chalk.red(`  Error: ${result.error}`));
     }
   } catch (err) {
-    console.log(chalk.yellow('  (Backend not connected - run hilbert server first)'));
+    console.log(chalk.yellow('  (Backend not available - run hilbert server first)'));
   }
 }
 
@@ -178,7 +191,7 @@ async function runReview(artifact: string): Promise<void> {
       console.log(chalk.red(`  Error: ${result.error}`));
     }
   } catch (err) {
-    console.log(chalk.yellow('  (Backend not connected - run hilbert server first)'));
+    console.log(chalk.yellow('  (Backend not available - run hilbert server first)'));
   }
 }
 
@@ -198,7 +211,7 @@ async function runDraft(topic: string): Promise<void> {
       console.log(chalk.red(`  Error: ${result.error}`));
     }
   } catch (err) {
-    console.log(chalk.yellow('  (Backend not connected - run hilbert server first)'));
+    console.log(chalk.yellow('  (Backend not available - run hilbert server first)'));
   }
 }
 
@@ -230,7 +243,7 @@ async function runLog(sessionId?: string): Promise<void> {
       console.log(chalk.red(`  Error: ${result.error}`));
     }
   } catch (err) {
-    console.log(chalk.yellow('  (Backend not connected - run hilbert server first)'));
+    console.log(chalk.yellow('  (Backend not available - run hilbert server first)'));
   }
 }
 

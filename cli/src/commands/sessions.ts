@@ -17,22 +17,21 @@ export async function listSessions(): Promise<void> {
 
       if (sessions.length === 0) {
         console.log(chalk.gray('  No sessions found'));
-        return;
+      } else {
+        console.log(chalk.bold('\n  Sessions:\n'));
+        sessions.forEach(session => {
+          const statusColor = session.status === 'done' ? chalk.green : chalk.yellow;
+          console.log(`  ${chalk.cyan(session.id.slice(0, 8))} ${statusColor(session.status)} ${chalk.gray(session.query.slice(0, 50))}`);
+        });
+        console.log();
       }
-
-      console.log(chalk.bold('\n  Sessions:\n'));
-      sessions.forEach(session => {
-        const statusColor = session.status === 'done' ? chalk.green : chalk.yellow;
-        console.log(`  ${chalk.cyan(session.id.slice(0, 8))} ${statusColor(session.status)} ${chalk.gray(session.query.slice(0, 50))}`);
-      });
-      console.log();
     }
   } catch (err) {
     console.log(chalk.red('  Failed to list sessions'));
-    console.log(chalk.gray('  Make sure the backend is running'));
   }
 
   ipcClient.disconnect();
+  setTimeout(() => process.exit(0), 500);
 }
 
 export async function showSession(sessionId: string): Promise<void> {

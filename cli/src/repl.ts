@@ -75,6 +75,18 @@ export async function startRepl(): Promise<void> {
         case '/compare':
           await runCompare(args.join(' '));
           break;
+        case '/review':
+          await runReview(args.join(' '));
+          break;
+        case '/draft':
+          await runDraft(args.join(' '));
+          break;
+        case '/watch':
+          await runWatch(args.join(' '));
+          break;
+        case '/log':
+          await runLog(args[0]);
+          break;
         default:
           console.log(chalk.yellow(`  Unknown command: ${command}`));
           console.log(chalk.gray('  Type /help for available commands'));
@@ -102,8 +114,18 @@ async function runDeepResearch(topic: string): Promise<void> {
     return;
   }
 
-  console.log(chalk.cyan(`  Starting deep research on: ${topic}`));
-  console.log(chalk.gray('  (This would connect to the Python backend)'));
+  console.log(chalk.cyan(`\n  Running deep research on: ${topic}`));
+  
+  try {
+    const result = await ipcClient.sendCommand('deepresearch', [topic], {});
+    if (result.type === 'response') {
+      console.log(chalk.green('  Research complete!'));
+    } else if (result.type === 'error') {
+      console.log(chalk.red(`  Error: ${result.error}`));
+    }
+  } catch (err) {
+    console.log(chalk.yellow('  (Backend not connected - run hilbert server first)'));
+  }
 }
 
 async function runLiteratureReview(topic: string): Promise<void> {
@@ -112,8 +134,18 @@ async function runLiteratureReview(topic: string): Promise<void> {
     return;
   }
 
-  console.log(chalk.cyan(`  Starting literature review on: ${topic}`));
-  console.log(chalk.gray('  (This would connect to the Python backend)'));
+  console.log(chalk.cyan(`\n  Running literature review on: ${topic}`));
+  
+  try {
+    const result = await ipcClient.sendCommand('lit', [topic], {});
+    if (result.type === 'response') {
+      console.log(chalk.green('  Literature review complete!'));
+    } else if (result.type === 'error') {
+      console.log(chalk.red(`  Error: ${result.error}`));
+    }
+  } catch (err) {
+    console.log(chalk.yellow('  (Backend not connected - run hilbert server first)'));
+  }
 }
 
 async function runCompare(topic: string): Promise<void> {
@@ -122,6 +154,88 @@ async function runCompare(topic: string): Promise<void> {
     return;
   }
 
-  console.log(chalk.cyan(`  Comparing: ${topic}`));
-  console.log(chalk.gray('  (This would connect to the Python backend)'));
+  console.log(chalk.cyan(`\n  Comparing: ${topic}`));
+  
+  try {
+    const result = await ipcClient.sendCommand('compare', [topic], {});
+    if (result.type === 'response') {
+      console.log(chalk.green('  Comparison complete!'));
+    } else if (result.type === 'error') {
+      console.log(chalk.red(`  Error: ${result.error}`));
+    }
+  } catch (err) {
+    console.log(chalk.yellow('  (Backend not connected - run hilbert server first)'));
+  }
+}
+
+async function runReview(artifact: string): Promise<void> {
+  if (!artifact) {
+    console.log(chalk.yellow('  Usage: /review <artifact>'));
+    return;
+  }
+
+  console.log(chalk.cyan(`\n  Reviewing: ${artifact}`));
+  
+  try {
+    const result = await ipcClient.sendCommand('review', [artifact], {});
+    if (result.type === 'response') {
+      console.log(chalk.green('  Review complete!'));
+    } else if (result.type === 'error') {
+      console.log(chalk.red(`  Error: ${result.error}`));
+    }
+  } catch (err) {
+    console.log(chalk.yellow('  (Backend not connected - run hilbert server first)'));
+  }
+}
+
+async function runDraft(topic: string): Promise<void> {
+  if (!topic) {
+    console.log(chalk.yellow('  Usage: /draft <topic>'));
+    return;
+  }
+
+  console.log(chalk.cyan(`\n  Drafting: ${topic}`));
+  
+  try {
+    const result = await ipcClient.sendCommand('draft', [topic], {});
+    if (result.type === 'response') {
+      console.log(chalk.green('  Draft complete!'));
+    } else if (result.type === 'error') {
+      console.log(chalk.red(`  Error: ${result.error}`));
+    }
+  } catch (err) {
+    console.log(chalk.yellow('  (Backend not connected - run hilbert server first)'));
+  }
+}
+
+async function runWatch(topic: string): Promise<void> {
+  if (!topic) {
+    console.log(chalk.yellow('  Usage: /watch <topic>'));
+    return;
+  }
+
+  console.log(chalk.cyan(`\n  Watch functionality for: ${topic}`));
+  console.log(chalk.gray('  (Coming soon)'));
+}
+
+async function runLog(sessionId?: string): Promise<void> {
+  console.log(chalk.cyan('\n  Retrieving logs...'));
+  
+  try {
+    const result = await ipcClient.sendCommand('log', sessionId ? [sessionId] : [], {});
+    if (result.type === 'response') {
+      const logs = result.result as Array<{timestamp: string; action: string; details: string}>;
+      if (logs && logs.length > 0) {
+        logs.forEach(entry => {
+          console.log(chalk.gray(`  [${entry.timestamp}] ${entry.action}`));
+        });
+      } else {
+        console.log(chalk.gray('  No log entries found'));
+      }
+    } else if (result.type === 'error') {
+      console.log(chalk.red(`  Error: ${result.error}`));
+    }
+  } catch (err) {
+    console.log(chalk.yellow('  (Backend not connected - run hilbert server first)'));
+  }
 }

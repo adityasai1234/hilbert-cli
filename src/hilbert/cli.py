@@ -212,6 +212,13 @@ def version() -> None:
 
 
 @app.command()
+def server() -> None:
+    """Start Hilbert server for IPC communication."""
+    from hilbert.server import server_app
+    server_app()
+
+
+@app.command()
 def theme(
     action: str = typer.Argument("list", help="list, get, or set"),
     theme_name: Optional[str] = typer.Argument(None, help="Theme name"),

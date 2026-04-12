@@ -212,10 +212,18 @@ def version() -> None:
 
 
 @app.command()
-def server() -> None:
+def server(
+    mode: str = typer.Argument("stdio", help="Server mode: stdio")
+) -> None:
     """Start Hilbert server for IPC communication."""
-    from hilbert.server import server_app
-    server_app()
+    from hilbert.server import IPCServer
+    
+    if mode == "stdio":
+        import asyncio
+        server = IPCServer()
+        asyncio.run(server.run())
+    else:
+        console.print(f"[red]Unknown mode: {mode}[/red]")
 
 
 @app.command()

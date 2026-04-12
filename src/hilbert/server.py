@@ -5,14 +5,15 @@ import json
 import sys
 from typing import Any, Dict
 import typer
-from rich.console import Console
-from rich.panel import Panel
-from rich.text import Text
 
 from hilbert import __version__
 
 server_app = typer.Typer(name="server", help="Hilbert server mode for IPC")
-console = Console()
+
+
+def log(msg: str):
+    """Log to stderr to avoid interfering with JSON protocol."""
+    print(msg, file=sys.stderr, flush=True)
 
 
 class IPCServer:
@@ -35,7 +36,7 @@ class IPCServer:
             topic = args[0] if args else options.get("topic", "")
             rounds = options.get("rounds", 3)
 
-            console.print(f"[cyan]Running research: {topic}[/cyan]")
+            log(f"Running research: {topic}")
 
             result = await run_research(topic, max_rounds=rounds)
 
@@ -89,7 +90,7 @@ class IPCServer:
 
         elif command == "lit":
             topic = args[0] if args else options.get("topic", "")
-            console.print(f"[cyan]Running literature review: {topic}[/cyan]")
+            log(f"Running literature review: {topic}")
             rounds = options.get("rounds", 3)
             result = await run_research(topic, max_rounds=rounds)
             report = result.get("report")
@@ -105,7 +106,7 @@ class IPCServer:
 
         elif command == "compare":
             topic = args[0] if args else options.get("topic", "")
-            console.print(f"[cyan]Running comparison: {topic}[/cyan]")
+            log(f"Running comparison: {topic}")
             rounds = options.get("rounds", 3)
             result = await run_research(topic, max_rounds=rounds)
             report = result.get("report")
@@ -121,7 +122,7 @@ class IPCServer:
 
         elif command == "review":
             artifact = args[0] if args else options.get("artifact", "")
-            console.print(f"[cyan]Running peer review: {artifact}[/cyan]")
+            log(f"Running peer review: {artifact}")
             return {
                 "files": [
                     f"{settings.output_dir}/review.md",
@@ -131,7 +132,7 @@ class IPCServer:
 
         elif command == "draft":
             topic = args[0] if args else options.get("topic", "")
-            console.print(f"[cyan]Generating draft: {topic}[/cyan]")
+            log(f"Generating draft: {topic}")
             return {
                 "files": [
                     f"{settings.output_dir}/draft.md",
@@ -153,7 +154,7 @@ class IPCServer:
         return {"error": f"Unknown command: {command}"}
 
     async def send_response(self, msg_id: str, result: Any, msg_type: str = "response"):
-        """Send a response message."""
+        """Send a response message to stdout."""
         response = {
             "type": msg_type,
             "id": msg_id,
@@ -162,7 +163,7 @@ class IPCServer:
         print(json.dumps(response), flush=True)
 
     async def send_stream(self, msg_id: str, event: str, data: Any):
-        """Send a stream message."""
+        """Send a stream message to stdout."""
         response = {
             "type": "stream",
             "id": msg_id,
@@ -175,11 +176,7 @@ class IPCServer:
         """Run the IPC server."""
         self.running = True
 
-        console.print(Panel(
-            Text(f"Hilbert Server v{__version__}", style="bold cyan"),
-            box=None,
-            padding=(0, 1),
-        ))
+        log(f"Hilbert Server v{__version__} - stdin/stdout mode")
 
         while self.running:
             try:
@@ -204,10 +201,10 @@ class IPCServer:
             except json.JSONDecodeError:
                 continue
             except Exception as e:
-                console.print(f"[red]Error: {e}[/red]")
+                log(f"Error: {e}")
                 break
 
-        console.print("[yellow]Server stopped[/yellow]")
+        log("Server stopped")
 
 
 @server_app.command()
@@ -216,8 +213,8 @@ def start(
     port: int = typer.Option(8765, "--port", "-p", help="Port to listen on"),
 ):
     """Start the Hilbert IPC server."""
-    console.print(f"[cyan]Starting Hilbert server on {host}:{port}...[/cyan]")
-    console.print("[yellow]Note: Use 'hilbert server stdio' for CLI communication[/yellow]")
+    log(f"Starting Hilbert server on {host}:{port}...")
+    log("Note: Use 'hilbert server stdio' for CLI communication")
 
     server = IPCServer()
     asyncio.run(server.run())

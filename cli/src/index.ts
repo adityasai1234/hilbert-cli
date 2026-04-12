@@ -103,9 +103,9 @@ program
 program
   .argument('[query]', 'Research query (runs in one-shot mode)')
   .action(async (query) => {
-    if (query) {
+    if (query && query.trim().length > 0) {
       const { runResearch } = await import('./commands/deepresearch');
-      await runResearch(query, program.opts());
+      await runResearch(query.trim(), program.opts());
     } else {
       const { startRepl } = await import('./repl');
       await startRepl();

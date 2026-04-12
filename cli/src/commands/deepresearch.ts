@@ -3,16 +3,20 @@ import ora from 'ora';
 import { ipcClient } from '../ipc/index.js';
 
 export interface ResearchOptions {
-  rounds?: number;
+  rounds?: string;
   model?: string;
   output?: string;
-  sessionId?: string;
+  subQuestions?: string;
+  topK?: string;
+  confidence?: string;
 }
 
 export async function runResearch(
   topic: string,
   options: ResearchOptions
 ): Promise<void> {
+  console.log(chalk.cyan(`\n  Research topic: ${topic}\n`));
+
   const spinner = ora(chalk.cyan('Starting research...')).start();
 
   try {
@@ -21,46 +25,36 @@ export async function runResearch(
     spinner.text = chalk.cyan('Running research workflow...');
 
     const result = await ipcClient.sendCommand('deepresearch', [topic], {
-      rounds: options.rounds || 3,
+      rounds: parseInt(options.rounds || '3'),
       model: options.model,
       output: options.output,
-      sessionId: options.sessionId
+      subQuestions: parseInt(options.subQuestions || '4'),
+      topK: parseInt(options.topK || '20'),
+      confidence: parseFloat(options.confidence || '0.75')
     });
 
     if (result.type === 'response') {
       spinner.succeed(chalk.green('Research complete!'));
 
-      const files = result.result as { files?: string[] };
-      if (files?.files) {
+      const res = result.result as { files?: string[]; report_id?: string };
+      if (res?.files) {
         console.log(chalk.cyan('\n  Generated files:'));
-        files.files.forEach(file => {
+        res.files.forEach(file => {
           console.log(chalk.gray(`    - ${file}`));
         });
       }
+      console.log();
     } else if (result.type === 'error') {
       spinner.fail(chalk.red('Research failed'));
       console.error(chalk.red(`  ${result.error}`));
+      console.log();
     }
   } catch (err) {
     spinner.fail(chalk.red('Failed to start research'));
     console.error(chalk.red(`  ${err}`));
+    console.log();
   }
 
   ipcClient.disconnect();
-}
-
-export async function runDeepResearchFromRepl(topic: string): Promise<void> {
-  console.log(chalk.cyan(`\n  Research topic: ${topic}`));
-
-  const spinner = ora(chalk.cyan('Researching...')).start();
-
-  try {
-    const result = await ipcClient.sendCommand('deepresearch', [topic], {});
-
-    if (result.type === 'response') {
-      spinner.succeed(chalk.green('Research complete!'));
-    }
-  } catch (err) {
-    spinner.fail(chalk.red('Research failed'));
-  }
+  setTimeout(() => process.exit(0), 500);
 }

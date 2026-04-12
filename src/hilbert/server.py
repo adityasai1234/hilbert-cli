@@ -87,6 +87,69 @@ class IPCServer:
                     return {"success": True}
                 return {"error": "Session ID required"}
 
+        elif command == "lit":
+            topic = args[0] if args else options.get("topic", "")
+            console.print(f"[cyan]Running literature review: {topic}[/cyan]")
+            rounds = options.get("rounds", 3)
+            result = await run_research(topic, max_rounds=rounds)
+            report = result.get("report")
+            if report:
+                return {
+                    "report_id": result.get("session_id", "unknown"),
+                    "files": [
+                        f"{settings.output_dir}/lit-review.md",
+                        f"{settings.output_dir}/sources.json",
+                    ],
+                }
+            return {"error": "Literature review failed"}
+
+        elif command == "compare":
+            topic = args[0] if args else options.get("topic", "")
+            console.print(f"[cyan]Running comparison: {topic}[/cyan]")
+            rounds = options.get("rounds", 3)
+            result = await run_research(topic, max_rounds=rounds)
+            report = result.get("report")
+            if report:
+                return {
+                    "report_id": result.get("session_id", "unknown"),
+                    "files": [
+                        f"{settings.output_dir}/comparison.md",
+                        f"{settings.output_dir}/matrix.json",
+                    ],
+                }
+            return {"error": "Comparison failed"}
+
+        elif command == "review":
+            artifact = args[0] if args else options.get("artifact", "")
+            console.print(f"[cyan]Running peer review: {artifact}[/cyan]")
+            return {
+                "files": [
+                    f"{settings.output_dir}/review.md",
+                    f"{settings.output_dir}/annotations.md",
+                ],
+            }
+
+        elif command == "draft":
+            topic = args[0] if args else options.get("topic", "")
+            console.print(f"[cyan]Generating draft: {topic}[/cyan]")
+            return {
+                "files": [
+                    f"{settings.output_dir}/draft.md",
+                ],
+            }
+
+        elif command == "log":
+            session_id = args[0] if args else None
+            sessions = manager.list_sessions()
+            logs = []
+            for s in sessions:
+                logs.append({
+                    "timestamp": s.created_at.isoformat(),
+                    "action": s.status.value,
+                    "details": s.query[:50]
+                })
+            return logs
+
         return {"error": f"Unknown command: {command}"}
 
     async def send_response(self, msg_id: str, result: Any, msg_type: str = "response"):

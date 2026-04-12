@@ -1,16 +1,8 @@
-import chalk from 'chalk';
 import inquirer from 'inquirer';
+import chalk from 'chalk';
 import { ipcClient } from './ipc/index.js';
-
-const ASCII_LOGO = `
-░██        ░██░██ ░██                               ░██    
-░██           ░██ ░██                               ░██    
-░████████  ░██░██ ░████████   ░███████  ░██░████ ░████████ 
-░██    ░██ ░██░██ ░██    ░██ ░██    ░██ ░███        ░██    
-░██    ░██ ░██░██ ░██    ░██ ░█████████ ░██         ░██    
-░██    ░██ ░██░██ ░███   ░██ ░██        ░██         ░██    
-░██    ░██ ░██░██ ░██░█████   ░███████  ░██         ░██    
-`;
+import { printBanner, createHelpPanel } from './ui/index.js';
+import { setTheme, getTheme } from './ui/theme.js';
 
 const COMMANDS = [
   { name: '/deepresearch', description: 'Run a thorough research investigation' },
@@ -20,14 +12,13 @@ const COMMANDS = [
   { name: '/draft', description: 'Draft a research paper' },
   { name: '/watch', description: 'Monitor a topic over time' },
   { name: '/log', description: 'View session history' },
+  { name: '/theme', description: 'Set the theme (default, dark, light, mono)' },
   { name: '/help', description: 'Show available commands' },
   { name: '/quit', description: 'Exit Hilbert' },
 ];
 
 export async function startRepl(): Promise<void> {
-  console.log(chalk.cyan(ASCII_LOGO));
-  console.log(chalk.bold.cyan('\n  Hilbert Research Agent v0.1.0'));
-  console.log(chalk.gray('  Type /help for available commands\n'));
+  printBanner();
 
   try {
     await ipcClient.connect();
@@ -86,6 +77,9 @@ export async function startRepl(): Promise<void> {
           break;
         case '/log':
           await runLog(args[0]);
+          break;
+        case '/theme':
+          await runTheme(args[0]);
           break;
         default:
           console.log(chalk.yellow(`  Unknown command: ${command}`));
@@ -237,5 +231,20 @@ async function runLog(sessionId?: string): Promise<void> {
     }
   } catch (err) {
     console.log(chalk.yellow('  (Backend not connected - run hilbert server first)'));
+  }
+}
+
+async function runTheme(themeName?: string): Promise<void> {
+  if (!themeName) {
+    console.log(chalk.cyan(`\n  Current theme: ${getTheme()}`));
+    console.log(chalk.gray('  Available: default, dark, light, mono'));
+    return;
+  }
+
+  if (setTheme(themeName)) {
+    console.log(chalk.green(`\n  Theme set to: ${themeName}`));
+  } else {
+    console.log(chalk.red(`\n  Unknown theme: ${themeName}`));
+    console.log(chalk.gray('  Available: default, dark, light, mono'));
   }
 }

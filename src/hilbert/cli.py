@@ -2,6 +2,7 @@
 
 from typing import Optional
 import typer
+from rich import box
 from rich.console import Console
 
 from hilbert.config.settings import HilbertSettings, get_settings
@@ -124,6 +125,7 @@ def config(
         console.print(f"max_rounds: {settings.max_rounds}")
         console.print(f"sub_questions: {settings.sub_questions}")
         console.print(f"top_k: {settings.top_k}")
+        console.print(f"theme: {settings.theme}")
         console.print(f"output_dir: {settings.output_dir}")
     
     elif action == "set":
@@ -153,29 +155,99 @@ def watch() -> None:
 @app.command()
 def doctor() -> None:
     """Check Hilbert installation."""
-    console.print("[bold]Hilbert Doctor[/bold]\n")
+    from hilbert.ui import print_banner, create_deps_table
     
-    # Check Python version
-    import sys
-    console.print(f"Python: {sys.version.split()[0]}")
+    print_banner()
     
-    # Check installed packages
-    console.print("Dependencies:")
+    console = Console()
+    console.print()
+    
     deps = ["langgraph", "litellm", "rich", "typer", "pydantic", "sqlalchemy"]
+    deps_status = {}
     for dep in deps:
         try:
             __import__(dep)
-            console.print(f"  ✓ {dep}")
+            deps_status[dep] = True
         except ImportError:
-            console.print(f"  ✗ {dep} [red]missing[/red]")
+            deps_status[dep] = False
     
-    console.print(f"\nHilbert version: {__version__}")
+    import sys
+    version_info = {
+        "Python": sys.version.split()[0],
+        "Hilbert": __version__,
+    }
+    
+    from rich.table import Table
+    table = Table(show_header=False, box=None)
+    table.add_column("key", style="bold cyan", width=15)
+    table.add_column("value", style="white")
+    
+    table.add_row("Python", sys.version.split()[0])
+    table.add_row("Hilbert", __version__)
+    table.add_row("Status", "[green]Ready[/green]")
+    
+    deps_ok = sum(1 for v in deps_status.values() if v)
+    table.add_row("Deps", f"[green]{deps_ok}[/green]/{len(deps)}")
+    
+    from rich.panel import Panel
+    status_panel = Panel(
+        table,
+        box=box.ROUNDED,
+        style="blue",
+        padding=(1, 2),
+        title="[bold cyan]Status[/bold cyan]",
+    )
+    console.print(status_panel)
+    console.print()
+    
+    deps_table = create_deps_table(deps_status)
+    console.print(deps_table)
+    console.print()
 
 
 @app.command()
 def version() -> None:
     """Show Hilbert version."""
     console.print(f"Hilbert {__version__}")
+
+
+@app.command()
+def theme(
+    action: str = typer.Argument("list", help="list, get, or set"),
+    theme_name: Optional[str] = typer.Argument(None, help="Theme name"),
+) -> None:
+    """Manage Hilbert themes."""
+    from hilbert.ui.themes import list_themes, get_theme, set_theme, THEMES
+    
+    if action == "list":
+        console.print("[bold]Available Themes[/bold]")
+        for name, desc in list_themes().items():
+            console.print(f"  {name}: {desc}")
+    
+    elif action == "get":
+        current = get_theme()
+        console.print(f"[bold]Current Theme: {current.name}[/bold]")
+        console.print(f"  {current.description}")
+        console.print(f"  primary: {current.primary}")
+        console.print(f"  secondary: {current.secondary}")
+        console.print(f"  accent: {current.accent}")
+    
+    elif action == "set":
+        if not theme_name:
+            console.print("[red]Theme name required[/red]")
+            raise typer.Exit(1)
+        
+        if set_theme(theme_name):
+            console.print(f"[green]Theme set to: {theme_name}[/green]")
+        else:
+            console.print(f"[red]Unknown theme: {theme_name}[/red]")
+            console.print("Available: " + ", ".join(THEMES.keys()))
+            raise typer.Exit(1)
+    
+    else:
+        console.print(f"[red]Unknown action: {action}[/red]")
+        console.print("Use: list, get, or set")
+        raise typer.Exit(1)
 
 
 @app.callback(invoke_without_command=True)

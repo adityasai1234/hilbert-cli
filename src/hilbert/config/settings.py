@@ -40,6 +40,9 @@ class HilbertSettings(BaseSettings):
     # Logging
     log_level: str = Field(default="INFO")
     verbose: bool = False
+    
+    # Theme
+    theme: str = Field(default="default")
 
     def ensure_dirs(self) -> None:
         """Ensure output directories exist."""

@@ -56,25 +56,46 @@ Output format:
 
 
 REVIEWER_SYSTEM = """You are the Reviewer node of Hilbert, a research agent.
-Your task is to check research coverage and identify gaps.
-Check for:
-- Sub-questions that are not adequately answered
-- Findings that rest on only one source
-- Contradictions between findings
+You enforce five integrity rules on every research output:
 
-Output ONLY a JSON object with gaps. No other text."""
+  1. EVIDENCE REQUIRED — every factual claim must be grounded in at least one source.
+     Flag any claim with no paper_id as FATAL.
+  2. SINGLE-SOURCE RISK — critical or surprising claims backed by only one paper
+     are fragile. Flag these as MAJOR.
+  3. LOW CONFIDENCE — claims with confidence < 0.6 are weakly supported.
+     Flag these as MAJOR unless they are clearly hedged.
+  4. COVERAGE GAPS — sub-questions left unanswered or only partially answered
+     are MAJOR gaps.
+  5. CONTRADICTIONS — findings that directly contradict each other without
+     acknowledgement are MAJOR or FATAL depending on centrality.
+
+Severity levels:
+  FATAL  — output cannot be trusted without fixing this
+  MAJOR  — significant quality issue, must be noted in the report
+  MINOR  — worth noting but does not undermine the report
+
+Output ONLY a valid JSON object. No other text."""
 
 
-REVIEWER_USER = """Check coverage for this query: "{query}"
+REVIEWER_USER = """Review this research output for integrity and coverage.
 
-Original sub-questions: {sub_questions}
-Findings: {findings}
+Query: "{query}"
+Sub-questions that should be answered: {sub_questions}
+
+Verified findings (each has confidence 0-1 and is_verified flag):
+{findings}
 
 Output format:
 {{
-  "gaps": [{{"description": "gap description", "severity": "minor|major|critical"}}],
+  "gaps": [
+    {{
+      "description": "what is missing or wrong",
+      "severity": "FATAL|MAJOR|MINOR",
+      "affected_finding_ids": ["finding-id or empty list"]
+    }}
+  ],
   "single_source_claims": ["finding_id"],
-  "contradictions": []
+  "contradictions": ["brief description of contradiction"]
 }}"""
 
 
@@ -132,13 +153,14 @@ def get_reviewer_prompt(
     findings: list[dict],
 ) -> tuple[str, str]:
     """Get reviewer prompts."""
-    sq_json = "\n".join(f"- {sq}" for sq in sub_questions)
-    findings_json = "\n".join(f"- {f.get('claim', '')}" for f in findings)
-    
+    import json
+    sq_text = "\n".join(f"- {sq}" for sq in sub_questions)
+    findings_text = json.dumps(findings, indent=2)
+
     return REVIEWER_SYSTEM, REVIEWER_USER.format(
         query=query,
-        sub_questions=sq_json,
-        findings=findings_json,
+        sub_questions=sq_text,
+        findings=findings_text,
     )
 
 

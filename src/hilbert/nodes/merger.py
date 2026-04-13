@@ -1,11 +1,13 @@
 """Merger node for Hilbert."""
 
+import asyncio
 import datetime
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from hilbert.config.settings import get_settings
 from hilbert.models import Paper
 from hilbert.sources import cosine_similarity, embed_papers, get_embedding_client
+from hilbert.sources.semantic_scholar import get_semantic_scholar_client
 from hilbert.state.research import ResearchState
 
 # Cosine similarity threshold above which two papers are near-duplicates
@@ -160,6 +162,33 @@ async def mmr_select(
     return [papers[i] for i in selected_indices]
 
 
+async def build_citation_graph(papers: List[Paper]) -> Dict[str, List[str]]:
+    """Build a within-corpus citation graph.
+
+    For each paper that has a Semantic Scholar paper_id, fetch the IDs of
+    papers it references.  Filter those IDs to only those present in the
+    current corpus so the graph represents intra-corpus connections only.
+
+    Returns {paper_id: [cited_paper_ids_in_corpus]}.
+    """
+    corpus_ids: set = {p.paper_id for p in papers if p.paper_id}
+    if not corpus_ids:
+        return {}
+
+    client = get_semantic_scholar_client()
+
+    async def _fetch(paper: Paper) -> tuple[str, List[str]]:
+        try:
+            refs = await client.get_references(paper.paper_id, limit=50)
+            in_corpus = [r for r in refs if r in corpus_ids]
+            return paper.paper_id, in_corpus
+        except Exception:
+            return paper.paper_id, []
+
+    results = await asyncio.gather(*[_fetch(p) for p in papers if p.paper_id])
+    return {pid: cited for pid, cited in results if cited}
+
+
 async def merger_node(state: ResearchState) -> dict:
     """Exact dedup → semantic dedup → rank → MMR select → decide next phase."""
     settings = get_settings()
@@ -177,10 +206,13 @@ async def merger_node(state: ResearchState) -> dict:
     top_k = settings.top_k
     papers = await mmr_select(papers, query, k=top_k, lam=settings.mmr_lambda)
 
+    citation_graph = await build_citation_graph(papers)
+
     if callback:
         callback("merger", {
             "papers_before_dedup": before_exact,
             "papers_after_filter": len(papers),
+            "citation_edges": sum(len(v) for v in citation_graph.values()),
         })
 
     # --- Convergence detection ---
@@ -223,6 +255,7 @@ async def merger_node(state: ResearchState) -> dict:
         "status": next_status,
         "findings_centroid": new_centroid,
         "converged": converged,
+        "citation_graph": citation_graph,
     }
 
 

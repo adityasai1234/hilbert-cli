@@ -42,6 +42,7 @@ async def writer_node(state: ResearchState) -> dict:
     papers = state.get("papers", [])
     started_at: Optional[datetime] = state.get("started_at")
     gaps = state.get("gaps", [])
+    contradictions = state.get("contradictions", [])
 
     callback = state.get("progress_callback")
     if callback:
@@ -80,12 +81,28 @@ async def writer_node(state: ResearchState) -> dict:
 
     bibtex = generate_bibtex(papers)
 
+    # Build contradiction section if any were confirmed
+    contradictions_md = ""
+    if contradictions:
+        lines = ["## Contradictions Detected\n",
+                 "> The following claim pairs were identified as potentially contradicting each other.\n"]
+        for c in contradictions:
+            lines.append(
+                f"- **{c.severity_label()}** — *\"{c.claim_a}\"* vs *\"{c.claim_b}\"*"
+                + (f"\n  {c.description}" if c.description else "")
+            )
+        contradictions_md = "\n".join(lines)
+
+    sections = {"summary": content}
+    if contradictions_md:
+        sections["contradictions"] = contradictions_md
+
     report = Report(
         report_id=f"report-{uuid.uuid4().hex[:8]}",
         title=query,
         query=query,
         executive_summary="",
-        sections={"summary": content},
+        sections=sections,
         sources=source_data,
         source_index=source_index,
         findings_summary=findings_data,
@@ -101,7 +118,7 @@ async def writer_node(state: ResearchState) -> dict:
     (output_dir / "report.json").write_text(json.dumps(report.to_json(), indent=2))
     (output_dir / "report.bib").write_text(bibtex)
 
-    provenance = generate_provenance(state, source_data, findings_data, gaps, started_at)
+    provenance = generate_provenance(state, source_data, findings_data, gaps, started_at, contradictions)
     (output_dir / "report.provenance.md").write_text(provenance)
 
     return {
@@ -116,6 +133,7 @@ def generate_provenance(
     findings_data: List[dict],
     gaps: List,
     started_at: Optional[datetime],
+    contradictions: List = None,
 ) -> str:
     """Generate enriched provenance sidecar."""
     from hilbert.ui.mermaid import generate_research_mermaid
@@ -128,6 +146,7 @@ def generate_provenance(
     verified_count = sum(1 for f in findings_data if f.get("is_verified"))
     fatal_gaps = [g for g in gaps if getattr(g, "severity", "") == "FATAL"]
     major_gaps = [g for g in gaps if getattr(g, "severity", "") == "MAJOR"]
+    confirmed_contradictions = list(contradictions or [])
 
     dimensions = state.get("research_dimensions", [])
     dim_labels = [d.get("label", d.get("strategy", "?")) for d in dimensions]
@@ -155,7 +174,14 @@ def generate_provenance(
         "## Reviewer integrity check",
         f"- **FATAL gaps:** {len(fatal_gaps)}",
         f"- **MAJOR gaps:** {len(major_gaps)}",
+        f"- **Confirmed contradictions:** {len(confirmed_contradictions)}",
     ]
+
+    if confirmed_contradictions:
+        lines.append("")
+        lines.append("### Contradictions")
+        for c in confirmed_contradictions:
+            lines.append(f"- [{c.severity_label()}] {c.description or 'No description'}")
 
     if fatal_gaps or major_gaps:
         lines.append("")

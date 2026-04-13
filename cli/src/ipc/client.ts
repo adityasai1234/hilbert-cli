@@ -122,13 +122,14 @@ export class IPCClient {
   async sendCommand(
     command: string,
     args: string[] = [],
-    options: Record<string, unknown> = {}
+    options: Record<string, unknown> = {},
+    existingMsgId?: string,
   ): Promise<IPCMessage> {
     if (!this.isConnected) {
       await this.connect();
     }
 
-    const msgId = `msg_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+    const msgId = existingMsgId ?? `msg_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
     const msg = {
       type: 'command',
       id: msgId,

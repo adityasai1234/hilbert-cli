@@ -51,6 +51,7 @@ dmypy.json
 
 # Markdown files (except README.md)
 *.md
+!cli/README.md
 
 # Environment
 .env

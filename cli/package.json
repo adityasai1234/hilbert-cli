@@ -1,6 +1,6 @@
 {
   "name": "hilbert",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "CLI research agent for academic researchers",
   "main": "dist/index.js",
   "bin": {
@@ -11,6 +11,8 @@
     "start": "node dist/index.js",
     "dev": "tsx src/index.ts",
     "link": "npm link",
+    "install:global": "npm link",
+    "postinstall": "npm run build && npm link",
     "test": "vitest"
   },
   "keywords": [

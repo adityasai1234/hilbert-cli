@@ -1,6 +1,6 @@
 """Mermaid diagram templates for Hilbert."""
 
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 
 def render_workflow_mermaid(
@@ -149,3 +149,60 @@ graph TD
     style Query fill:#f9f,stroke:#333
     style Report fill:#9f9,stroke:#333
 ```"""
+
+
+def generate_knowledge_graph(
+    papers: List[dict],
+    findings: List[dict],
+    citation_graph: Optional[dict] = None,
+    contradictions: Optional[List[dict]] = None,
+) -> str:
+    """Generate a Mermaid knowledge graph showing papers, findings, and relationships.
+
+    Args:
+        papers: List of paper dicts with paper_id, title, venue
+        findings: List of finding dicts with finding_id, claim, source_paper_id
+        citation_graph: Dict mapping paper_id to list of cited paper_ids
+        contradictions: List of dicts with claim_a, claim_b, severity
+    """
+    if not papers and not findings:
+        return ""
+
+    lines = ["```mermaid", "graph LR", ""]
+
+    paper_ids = set()
+    for p in papers[:15]:
+        pid = p.get("paper_id", f"p{hash(p.get('title', ''))}")
+        paper_ids.add(pid)
+        title = (p.get("title", "Unknown")[:25] + "...") if len(p.get("title", "")) > 25 else p.get("title", "Unknown")
+        lines.append(f'    {pid}["{title}"]')
+
+    lines.append("")
+
+    for i, f in enumerate(findings[:10]):
+        fid = f"finding{i}"
+        claim = (f.get("claim", "")[:35] + "...") if len(f.get("claim", "")) > 35 else f.get("claim", "")
+        lines.append(f'    {fid}["{claim}..."]')
+
+        source_pid = f.get("source_paper_id")
+        if source_pid and source_pid in paper_ids:
+            lines.append(f"    {source_pid} --> {fid}")
+
+    lines.append("")
+
+    if citation_graph:
+        for citing_id, cited_ids in citation_graph.items():
+            if citing_id not in paper_ids:
+                continue
+            for cited_id in cited_ids:
+                if cited_id in paper_ids:
+                    lines.append(f"    {citing_id} -.-> {cited_id}")
+
+    if contradictions:
+        lines.append("")
+        for c in contradictions[:5]:
+            lines.append(f'    classDef contradiction fill:#f99,stroke:#f00,stroke-width:2px')
+
+    lines.extend(["", "```"])
+
+    return "\n".join(lines)

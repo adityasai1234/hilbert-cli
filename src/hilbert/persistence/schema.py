@@ -1,6 +1,6 @@
 """SQLite database schema for Hilbert."""
 
-from sqlalchemy import JSON, Boolean, Column, DateTime, Float, Integer, String, Text, create_engine
+from sqlalchemy import JSON, Boolean, Column, DateTime, Float, Integer, String, Text, create_engine, LargeBinary
 from sqlalchemy.orm import DeclarativeBase, Session as SqlSession
 
 
@@ -22,7 +22,9 @@ class SessionTable(Base):
     status = Column(String, default="planning")
     created_at = Column(DateTime, nullable=False)
     updated_at = Column(DateTime, nullable=False)
+    last_searched_at = Column(DateTime, nullable=True)
     error_message = Column(Text, nullable=True)
+    tags = Column(JSON, nullable=True)  # list of tag strings, e.g. ["important", "review"]
 
 
 class PaperTable(Base):
@@ -67,6 +69,22 @@ class CheckpointTable(Base):
     session_id = Column(String, nullable=False)
     round = Column(Integer, nullable=False)
     state_json = Column(Text, nullable=False)
+    created_at = Column(DateTime, nullable=False)
+
+
+class EmbeddingCacheTable(Base):
+    """Embedding vectors cached by SHA-256 hash of the source text.
+
+    Keyed on content_hash so the same abstract embedded for two different
+    sessions is only sent to the API once.
+    """
+
+    __tablename__ = "embedding_cache"
+
+    content_hash = Column(String(64), primary_key=True)  # SHA-256 hex
+    text_preview = Column(String(120), nullable=True)     # first 120 chars for debugging
+    embedding = Column(Text, nullable=False)              # JSON-encoded float list
+    model = Column(String, nullable=False)
     created_at = Column(DateTime, nullable=False)
 
 

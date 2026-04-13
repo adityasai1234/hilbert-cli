@@ -6,6 +6,8 @@ import { setTheme, getTheme } from './ui/theme.js';
 
 const COMMANDS = [
   { name: '/deepresearch', description: 'Run a thorough research investigation' },
+  { name: '/continue', description: 'Continue a previous research session' },
+  { name: '/tag', description: 'Tag a session (e.g., /tag <id> important)' },
   { name: '/lit', description: 'Write a literature review' },
   { name: '/compare', description: 'Compare multiple approaches' },
   { name: '/review', description: 'Review a paper or report' },
@@ -72,6 +74,12 @@ export async function startRepl(): Promise<void> {
           break;
         case '/deepresearch':
           await runDeepResearch(args.join(' '));
+          break;
+        case '/continue':
+          await runContinue(args[0]);
+          break;
+        case '/tag':
+          await runTag(args[0], args[1]);
           break;
         case '/lit':
           await runLiteratureReview(args.join(' '));
@@ -259,5 +267,47 @@ async function runTheme(themeName?: string): Promise<void> {
   } else {
     console.log(chalk.red(`\n  Unknown theme: ${themeName}`));
     console.log(chalk.gray('  Available: default, dark, light, mono'));
+  }
+}
+
+async function runContinue(sessionId?: string): Promise<void> {
+  if (!sessionId) {
+    console.log(chalk.yellow('  Usage: /continue <session-id>'));
+    console.log(chalk.gray('  Run /log to see available session IDs'));
+    return;
+  }
+
+  console.log(chalk.cyan(`\n  Continuing session: ${sessionId}`));
+  
+  try {
+    const result = await ipcClient.sendCommand('continue', [sessionId], {});
+    if (result.type === 'response') {
+      console.log(chalk.green('  Session continued successfully!'));
+    } else if (result.type === 'error') {
+      console.log(chalk.red(`  Error: ${result.error}`));
+    }
+  } catch (err) {
+    console.log(chalk.yellow('  (Backend not available - run hilbert server first)'));
+  }
+}
+
+async function runTag(sessionId?: string, tag?: string): Promise<void> {
+  if (!sessionId || !tag) {
+    console.log(chalk.yellow('  Usage: /tag <session-id> <tag>'));
+    console.log(chalk.gray('  Example: /tag session-abc important'));
+    return;
+  }
+
+  console.log(chalk.cyan(`\n  Tagging session: ${sessionId} with "${tag}"`));
+  
+  try {
+    const result = await ipcClient.sendCommand('tag', [sessionId, tag], {});
+    if (result.type === 'response') {
+      console.log(chalk.green(`  Added tag "${tag}" to session`));
+    } else if (result.type === 'error') {
+      console.log(chalk.red(`  Error: ${result.error}`));
+    }
+  } catch (err) {
+    console.log(chalk.yellow('  (Backend not available - run hilbert server first)'));
   }
 }

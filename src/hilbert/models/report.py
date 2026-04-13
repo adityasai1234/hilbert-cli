@@ -1,7 +1,7 @@
 """Report models for Hilbert."""
 
 from datetime import datetime
-from typing import Optional
+from typing import Dict, List, Optional
 from pydantic import BaseModel, Field
 
 
@@ -12,15 +12,17 @@ class Report(BaseModel):
     title: str
     query: str
     executive_summary: str = ""
-    sections: dict[str, str] = Field(default_factory=dict)
-    sources: list[dict] = Field(default_factory=list)
-    findings_summary: list[dict] = Field(default_factory=list)
+    sections: Dict[str, str] = Field(default_factory=dict)
+    sources: List[dict] = Field(default_factory=list)
+    # Mapping from source number (1-based str) to paper_id for inline [N] references
+    source_index: Dict[str, str] = Field(default_factory=dict)
+    findings_summary: List[dict] = Field(default_factory=list)
     bibliography: str = ""
     created_at: datetime = Field(default_factory=datetime.now)
     status: str = "draft"  # draft, final
 
     def to_markdown(self) -> str:
-        """Export report as Markdown."""
+        """Export report as Markdown with inline [N] citation support."""
         lines = [
             f"# {self.title}",
             "",
@@ -33,23 +35,43 @@ class Report(BaseModel):
             lines.extend(["## Executive Summary", self.executive_summary, ""])
 
         for section_name, section_content in self.sections.items():
-            lines.extend([f"## {section_name}", section_content, ""])
+            lines.extend([f"## {section_name.title()}", section_content, ""])
 
         if self.findings_summary:
-            lines.append("## Findings Summary")
+            lines.extend(["## Key Findings", ""])
             for f in self.findings_summary:
                 conf = f.get("confidence", 0.0)
                 label = f.get("confidence_label", "unverified")
-                lines.append(f"- {f.get('claim', '')} [{label}: {conf:.2f}]")
+                verified_icon = "✓" if f.get("is_verified") else "○"
+                lines.append(
+                    f"- {verified_icon} {f.get('claim', '')} "
+                    f"*(confidence: {conf:.2f}, {label})*"
+                )
+            lines.append("")
 
         if self.sources:
-            lines.append("## Sources")
+            lines.extend(["## References", ""])
             for i, src in enumerate(self.sources, 1):
                 title = src.get("title", "Unknown")
                 authors = src.get("authors", [])
                 year = src.get("published_date", "n.d.")
                 url = src.get("url", "")
-                lines.append(f"{i}. {title}, {' et al.' if len(authors) > 2 else ', '.join(authors[:2])} ({year}). {url}")
+                doi = src.get("doi", "")
+
+                if isinstance(authors, list):
+                    author_str = (
+                        ", ".join(str(a) for a in authors[:2])
+                        + (" et al." if len(authors) > 2 else "")
+                    )
+                else:
+                    author_str = str(authors)
+
+                ref = f"[{i}] {author_str} ({year}). *{title}*."
+                if doi:
+                    ref += f" https://doi.org/{doi}"
+                elif url:
+                    ref += f" {url}"
+                lines.append(ref)
 
         return "\n".join(lines)
 
@@ -62,6 +84,7 @@ class Report(BaseModel):
             "executive_summary": self.executive_summary,
             "sections": self.sections,
             "sources": self.sources,
+            "source_index": self.source_index,
             "findings_summary": self.findings_summary,
             "created_at": self.created_at.isoformat(),
             "status": self.status,
@@ -70,3 +93,108 @@ class Report(BaseModel):
     def to_bibtex(self) -> str:
         """Export bibliography as BibTeX."""
         return self.bibliography
+
+    def to_latex(self) -> str:
+        """Export report as LaTeX article."""
+        import re
+
+        def escape_latex(text: str) -> str:
+            """Escape special LaTeX characters."""
+            text = text.replace("\\", "\\textbackslash{}")
+            for char, repl in [
+                ("&", "\\&"),
+                ("%", "\\%"),
+                ("$", "\\$"),
+                ("#", "\\#"),
+                ("_", "\\_"),
+                ("{", "\\{"),
+                ("}", "\\}"),
+                ("~", "\\textasciitilde{}"),
+                ("^", "\\textasciicircum{}"),
+            ]:
+                text = text.replace(char, repl)
+            return text
+
+        lines = [
+            "\\documentclass[12pt,a4paper]{article}",
+            "\\usepackage[utf8]{inputenc}",
+            "\\usepackage[T1]{fontenc}",
+            "\\usepackage{hyperref}",
+            "\\hypersetup{colorlinks=true,linkcolor=blue,filecolor=magenta,urlcolor=cyan}",
+            "",
+            f"\\title{{{escape_latex(self.title)}}}",
+            f"\\date{{{self.created_at.strftime('%B %d, %Y')}}}",
+            "",
+            "\\begin{document}",
+            "",
+            "\\maketitle",
+            "",
+        ]
+
+        if self.executive_summary:
+            lines.extend([
+                "\\section*{Executive Summary}",
+                escape_latex(self.executive_summary),
+                "",
+            ])
+
+        for section_name, section_content in self.sections.items():
+            escaped_name = escape_latex(section_name.title())
+            lines.extend([
+                f"\\section{{{escaped_name}}}",
+                escape_latex(section_content),
+                "",
+            ])
+
+        if self.findings_summary:
+            lines.extend([
+                "\\section*{Key Findings}",
+                "\\begin{itemize}",
+                "",
+            ])
+            for f in self.findings_summary:
+                verified = "$\\checkmark$" if f.get("is_verified") else "$\\circ$"
+                conf = f.get("confidence", 0.0)
+                claim = escape_latex(f.get("claim", ""))
+                lines.append(f"  \\item {verified} {claim} \\textit{{(confidence: {conf:.2f})}}")
+            lines.extend([
+                "",
+                "\\end{itemize}",
+                "",
+            ])
+
+        if self.sources:
+            lines.extend([
+                "\\section*{References}",
+                "\\begin{thebibliography}{99}",
+                "",
+            ])
+            for i, src in enumerate(self.sources, 1):
+                title = escape_latex(src.get("title", "Unknown"))
+                authors = src.get("authors", [])
+                year = src.get("published_date", "n.d.")
+                doi = src.get("doi", "")
+                url = src.get("url", "")
+
+                if isinstance(authors, list):
+                    author_str = ", ".join(str(a) for a in authors[:2])
+                    author_str += " et al." if len(authors) > 2 else ""
+                else:
+                    author_str = str(authors)
+
+                ref = f"\\bibitem{{ref{i}}} {escape_latex(author_str)} ({year}). {title}."
+                if doi:
+                    ref += f" DOI: \\href{{https://doi.org/{doi}}}{{{doi}}}"
+                elif url:
+                    ref += f" URL: \\url{{{url}}}"
+                lines.append(ref)
+
+            lines.extend([
+                "",
+                "\\end{thebibliography}",
+                "",
+            ])
+
+        lines.append("\\end{document}")
+
+        return "\n".join(lines)

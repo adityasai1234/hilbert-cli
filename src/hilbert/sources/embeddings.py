@@ -24,16 +24,37 @@ class EmbeddingClient:
         self._client = None
 
     async def embed_texts(self, texts: List[str]) -> List[List[float]]:
-        """Get embeddings for texts."""
+        """Get embeddings for texts, using SQLite cache to avoid redundant API calls."""
         if not texts:
             return []
 
-        if self.model.startswith("openai"):
-            return await self._embed_openai(texts)
-        elif self.model.startswith("ollama"):
-            return await self._embed_ollama(texts)
-        else:
-            return await self._embed_openai(texts)
+        # --- cache lookup ---
+        try:
+            from hilbert.persistence.manager import get_embedding_cache
+            cache = get_embedding_cache()
+            cached = cache.get_batch(texts)
+        except Exception:
+            cache = None
+            cached = {t: None for t in texts}
+
+        miss_indices = [i for i, t in enumerate(texts) if cached[t] is None]
+        miss_texts = [texts[i] for i in miss_indices]
+
+        if miss_texts:
+            if self.model.startswith("openai"):
+                fresh = await self._embed_openai(miss_texts)
+            elif self.model.startswith("ollama"):
+                fresh = await self._embed_ollama(miss_texts)
+            else:
+                fresh = await self._embed_openai(miss_texts)
+
+            if cache:
+                cache.set_batch(miss_texts, fresh)
+
+            for idx, emb in zip(miss_indices, fresh):
+                cached[texts[idx]] = emb
+
+        return [cached[t] for t in texts]
 
     async def _embed_openai(self, texts: List[str]) -> List[List[float]]:
         """Get embeddings from OpenAI."""
@@ -116,6 +137,24 @@ async def compute_similarities(
         similarities.append(best_sim)
 
     return similarities
+
+
+async def embed_papers(papers: list, client: Optional[EmbeddingClient] = None) -> List[List[float]]:
+    """Embed a list of Paper objects using title + abstract.
+
+    Uses the paper_id as a stable cache hint: if a paper was embedded in a
+    previous session its vector is served from SQLite without an API call.
+    Falls back to a zero vector on total failure.
+    """
+    client = client or get_embedding_client()
+    # Build text per paper; use paper_id as a stable cache seed so that
+    # the same paper across sessions hits the cache (same text → same hash).
+    texts = [f"{p.title}. {p.abstract}"[:2000] for p in papers]
+    try:
+        return await client.embed_texts(texts)
+    except Exception:
+        dim = 1536  # text-embedding-3-small dimensionality
+        return [[0.0] * dim for _ in papers]
 
 
 _client: Optional[EmbeddingClient] = None

@@ -90,15 +90,27 @@ class SemanticScholarClient:
         self,
         query: str,
         max_results: Optional[int] = None,
+        year_from: Optional[int] = None,
     ) -> List[Paper]:
-        """Search Semantic Scholar for papers."""
+        """Search Semantic Scholar for papers.
+
+        Args:
+            query: Search terms.
+            max_results: Maximum number of results.
+            year_from: If given, restrict results to papers published in this
+                year or later.  Passed as the ``year`` range parameter
+                (e.g. ``year_from=2023`` → ``year=2023-``).
+        """
         max_results = max_results or self.max_results
 
-        params = {
+        params: Dict[str, Any] = {
             "query": query,
             "limit": max_results,
             "fields": "title,abstract,authors,year,url,venue,doi,citationCount,isOpenAccess",
         }
+
+        if year_from is not None:
+            params["year"] = f"{year_from}-"
 
         url = f"{SEMANTIC_SCHOLAR_API_URL}/paper/search"
 
@@ -173,6 +185,30 @@ class SemanticScholarClient:
 
             return papers
 
+        except Exception:
+            return []
+
+
+    async def get_references(self, paper_id: str, limit: int = 20) -> list[str]:
+        """Return Semantic Scholar paper IDs that this paper cites (references).
+
+        Returns a list of paperId strings, not full Paper objects, to keep
+        this cheap — we only need IDs for the within-corpus citation graph.
+        """
+        url = f"{SEMANTIC_SCHOLAR_API_URL}/paper/{paper_id}/references"
+        params = {"limit": limit, "fields": "paperId"}
+
+        try:
+            session = await self._get_session()
+            async with session.get(url, params=params) as response:
+                if response.status != 200:
+                    return []
+                data = await response.json()
+            return [
+                ref["citedPaper"]["paperId"]
+                for ref in data.get("data", [])
+                if ref.get("citedPaper", {}).get("paperId")
+            ]
         except Exception:
             return []
 

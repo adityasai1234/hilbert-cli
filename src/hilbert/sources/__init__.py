@@ -9,6 +9,8 @@ from hilbert.sources.semantic_scholar import (
 from hilbert.sources.embeddings import (
     EmbeddingClient,
     cosine_similarity,
+    compute_similarities,
+    embed_papers,
     get_embedding_client,
 )
 
@@ -21,5 +23,7 @@ __all__ = [
     "get_semantic_scholar_client",
     "EmbeddingClient",
     "cosine_similarity",
+    "compute_similarities",
+    "embed_papers",
     "get_embedding_client",
 ]

@@ -1,9 +1,9 @@
-"""Writer node for Hilbert."""
+"""Writer node for Hilbert — inline citations + enriched provenance."""
 
+import json
 import uuid
-from pathlib import Path
 from datetime import datetime
-from typing import List
+from typing import Dict, List, Optional
 
 from hilbert.config.settings import get_settings
 from hilbert.llm import get_client, get_writer_prompt
@@ -11,31 +11,56 @@ from hilbert.models import Paper, Report
 from hilbert.state.research import ResearchState
 
 
+def _build_source_index(papers: List[Paper]) -> tuple[List[dict], Dict[str, str]]:
+    """Build a 1-based numbered source list and a paper_id → citation number map."""
+    source_data: List[dict] = []
+    source_index: Dict[str, str] = {}  # paper_id → "1", "2", ...
+
+    for i, paper in enumerate(papers[:20], start=1):
+        num = str(i)
+        source_data.append({
+            "citation_number": num,
+            "paper_id": paper.paper_id,
+            "title": paper.title,
+            "authors": [a.name for a in paper.authors],
+            "published_date": str(paper.published_date) if paper.published_date else "n.d.",
+            "url": str(paper.url) if paper.url else "",
+            "doi": paper.doi or "",
+            "venue": paper.venue or "",
+        })
+        source_index[paper.paper_id] = num
+
+    return source_data, source_index
+
+
 async def writer_node(state: ResearchState) -> dict:
-    """Generate final research report."""
+    """Generate final research report with inline [N] citations."""
     settings = get_settings()
 
     query = state["query"]
     findings = state.get("findings", [])
     papers = state.get("papers", [])
+    started_at: Optional[datetime] = state.get("started_at")
+    gaps = state.get("gaps", [])
+    contradictions = state.get("contradictions", [])
 
-    source_data = []
-    for paper in papers[:20]:
-        source_data.append({
-            "paper_id": paper.paper_id,
-            "title": paper.title,
-            "authors": [a.name for a in paper.authors],
-            "published_date": str(paper.published_date) if paper.published_date else "n.d.",
-            "url": str(paper.url),
-            "venue": paper.venue,
-        })
+    callback = state.get("progress_callback")
+    if callback:
+        callback("writer", {"status": "writing"})
+
+    source_data, source_index = _build_source_index(papers)
 
     findings_data = []
     for f in findings:
         findings_data.append({
+            "finding_id": f.finding_id,
             "claim": f.claim,
             "confidence": f.confidence,
             "confidence_label": f.confidence_label(),
+            "is_verified": f.is_verified,
+            "source_paper_id": getattr(f, "source_paper_id", None),
+            # Provide citation number directly so LLM can embed [N]
+            "citation_number": source_index.get(getattr(f, "source_paper_id", ""), "?"),
         })
 
     system_prompt, user_prompt = get_writer_prompt(
@@ -51,19 +76,35 @@ async def writer_node(state: ResearchState) -> dict:
             system_prompt=system_prompt,
             max_tokens=4000,
         )
-
     except Exception:
         content = generate_fallback_report(query, findings, papers)
 
     bibtex = generate_bibtex(papers)
+
+    # Build contradiction section if any were confirmed
+    contradictions_md = ""
+    if contradictions:
+        lines = ["## Contradictions Detected\n",
+                 "> The following claim pairs were identified as potentially contradicting each other.\n"]
+        for c in contradictions:
+            lines.append(
+                f"- **{c.severity_label()}** — *\"{c.claim_a}\"* vs *\"{c.claim_b}\"*"
+                + (f"\n  {c.description}" if c.description else "")
+            )
+        contradictions_md = "\n".join(lines)
+
+    sections = {"summary": content}
+    if contradictions_md:
+        sections["contradictions"] = contradictions_md
 
     report = Report(
         report_id=f"report-{uuid.uuid4().hex[:8]}",
         title=query,
         query=query,
         executive_summary="",
-        sections={"summary": content},
+        sections=sections,
         sources=source_data,
+        source_index=source_index,
         findings_summary=findings_data,
         bibliography=bibtex,
         created_at=datetime.now(),
@@ -73,19 +114,27 @@ async def writer_node(state: ResearchState) -> dict:
     output_dir = settings.output_dir
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    md_path = output_dir / "report.md"
-    md_path.write_text(report.to_markdown())
+    (output_dir / "report.md").write_text(report.to_markdown())
+    (output_dir / "report.json").write_text(json.dumps(report.to_json(), indent=2))
+    (output_dir / "report.bib").write_text(bibtex)
+    (output_dir / "report.tex").write_text(report.to_latex())
 
-    json_path = output_dir / "report.json"
-    import json
-    json_path.write_text(json.dumps(report.to_json(), indent=2))
+    from hilbert.ui.mermaid import generate_knowledge_graph
 
-    bib_path = output_dir / "report.bib"
-    bib_path.write_text(bibtex)
+    citation_graph: dict = state.get("citation_graph") or {}
+    contradictions_data = [{"claim_a": c.claim_a, "claim_b": c.claim_b, "severity": c.severity} for c in contradictions]
 
-    provenance = generate_provenance(query, len(papers), len(findings), state.get("round", 1), state.get("sub_questions", []))
-    prov_path = output_dir / "report.provenance.md"
-    prov_path.write_text(provenance)
+    kg = generate_knowledge_graph(
+        papers=source_data,
+        findings=findings_data,
+        citation_graph=citation_graph,
+        contradictions=contradictions_data if contradictions else None,
+    )
+    if kg:
+        (output_dir / "report.mmd").write_text(kg)
+
+    provenance = generate_provenance(state, source_data, findings_data, gaps, started_at, contradictions)
+    (output_dir / "report.provenance.md").write_text(provenance)
 
     return {
         "report": report,
@@ -94,31 +143,97 @@ async def writer_node(state: ResearchState) -> dict:
 
 
 def generate_provenance(
-    query: str,
-    papers_count: int,
-    findings_count: int,
-    rounds: int,
-    sub_questions: List[str],
+    state: ResearchState,
+    source_data: List[dict],
+    findings_data: List[dict],
+    gaps: List,
+    started_at: Optional[datetime],
+    contradictions: List = None,
 ) -> str:
-    """Generate provenance sidecar file."""
+    """Generate enriched provenance sidecar."""
     from hilbert.ui.mermaid import generate_research_mermaid
+    from hilbert.config.settings import get_settings
+
+    settings = get_settings()
+    now = datetime.now()
+    duration_s = int((now - started_at).total_seconds()) if started_at else 0
+
+    verified_count = sum(1 for f in findings_data if f.get("is_verified"))
+    fatal_gaps = [g for g in gaps if getattr(g, "severity", "") == "FATAL"]
+    major_gaps = [g for g in gaps if getattr(g, "severity", "") == "MAJOR"]
+    confirmed_contradictions = list(contradictions or [])
+
+    dimensions = state.get("research_dimensions", [])
+    dim_labels = [d.get("label", d.get("strategy", "?")) for d in dimensions]
 
     lines = [
-        f"# Provenance: {query}",
+        f"# Provenance: {state['query']}",
         "",
-        f"- **Date:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
-        f"- **Rounds:** {rounds}",
-        f"- **Sources consulted:** {papers_count}",
-        f"- **Findings:** {findings_count}",
-        f"- **Verification:** Pass - confidence >= 0.75",
+        "## Run metadata",
+        f"- **Date:** {now.strftime('%Y-%m-%d %H:%M:%S')}",
+        f"- **Duration:** {duration_s}s",
+        f"- **Model:** {settings.model}",
+        f"- **Rounds completed:** {state.get('round', 1)} / {state['max_rounds']}"
+        + (" *(converged early)*" if state.get("converged") else ""),
+        f"- **Research dimensions:** {', '.join(dim_labels) or 'default'}",
+        "",
+        "## Source pipeline",
+        f"- **Sources consulted (pre-dedup):** {state.get('papers_consulted', len(source_data))}",
+        f"- **Sources accepted (post-filter):** {len(source_data)}",
+        "",
+        "## Findings",
+        f"- **Total findings:** {len(findings_data)}",
+        f"- **Verified (confidence ≥ {settings.confidence_threshold}):** {verified_count}",
+        f"- **Unverified:** {len(findings_data) - verified_count}",
+        "",
+        "## Reviewer integrity check",
+        f"- **FATAL gaps:** {len(fatal_gaps)}",
+        f"- **MAJOR gaps:** {len(major_gaps)}",
+        f"- **Confirmed contradictions:** {len(confirmed_contradictions)}",
+    ]
+
+    if confirmed_contradictions:
+        lines.append("")
+        lines.append("### Contradictions")
+        for c in confirmed_contradictions:
+            lines.append(f"- [{c.severity_label()}] {c.description or 'No description'}")
+
+    if fatal_gaps or major_gaps:
+        lines.append("")
+        lines.append("### Gap details")
+        for g in fatal_gaps + major_gaps:
+            lines.append(f"- [{g.severity}] {g.description}")
+
+    # --- Within-corpus citation authority ---
+    citation_graph: dict = state.get("citation_graph") or {}
+    if citation_graph:
+        # Count how many corpus papers cite each paper_id
+        in_corpus_cited_by: dict = {}
+        for cited_list in citation_graph.values():
+            for cited_id in cited_list:
+                in_corpus_cited_by[cited_id] = in_corpus_cited_by.get(cited_id, 0) + 1
+
+        if in_corpus_cited_by:
+            # Build paper_id → title lookup
+            id_to_title = {s["paper_id"]: s["title"] for s in source_data}
+            top_cited = sorted(
+                in_corpus_cited_by.items(), key=lambda t: t[1], reverse=True
+            )[:5]
+            lines.extend([
+                "",
+                "## Top cross-cited papers (within corpus)",
+            ])
+            for pid, count in top_cited:
+                title = id_to_title.get(pid, pid)
+                lines.append(f"- [{count} in-corpus citation{'s' if count > 1 else ''}] **{title}**")
+
+    lines.extend([
         "",
         "## Sub-questions",
-    ]
-    if sub_questions:
-        lines.extend([f"- {sq}" for sq in sub_questions])
-    else:
-        lines.append("- (None)")
-    
+    ])
+    for sq in state.get("sub_questions", []):
+        lines.append(f"- {sq}")
+
     lines.extend([
         "",
         "## Workflow",

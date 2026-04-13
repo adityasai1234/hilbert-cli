@@ -22,6 +22,8 @@ class HilbertSettings(BaseSettings):
     top_k: int = Field(default=20, description="Papers to retain after merger")
     confidence_threshold: float = Field(default=0.75, ge=0.0, le=1.0)
     sub_questions_mode: Literal["fixed", "auto"] = Field(default="fixed")
+    mmr_lambda: float = Field(default=0.6, ge=0.0, le=1.0,
+        description="MMR relevance/diversity trade-off (1.0 = pure relevance)")
 
     # Model settings
     model: str = Field(default="openai/gpt-4o")

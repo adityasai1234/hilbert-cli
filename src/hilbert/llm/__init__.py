@@ -3,9 +3,11 @@
 from hilbert.llm.client import LLMClient, LLMResponse, LLMError, get_client
 from hilbert.llm.prompts import (
     get_planner_prompt,
+    get_dimensions_fallback,
     get_synthesis_prompt,
     get_reviewer_prompt,
     get_writer_prompt,
+    get_hypothesis_prompt,
 )
 
 __all__ = [
@@ -14,7 +16,9 @@ __all__ = [
     "LLMError",
     "get_client",
     "get_planner_prompt",
+    "get_dimensions_fallback",
     "get_synthesis_prompt",
     "get_reviewer_prompt",
     "get_writer_prompt",
+    "get_hypothesis_prompt",
 ]

@@ -1,9 +1,10 @@
 """Session manager for Hilbert SQLite persistence."""
 
+import hashlib
 import json
 import uuid
 from datetime import datetime
-from typing import List, Optional
+from typing import Dict, List, Optional
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session as SqlSession
 
@@ -11,7 +12,10 @@ from hilbert.config.settings import get_settings
 from hilbert.models.session import Session, SessionStatus
 from hilbert.models import Paper, Finding
 from hilbert.state.research import ResearchState
-from hilbert.persistence.schema import get_engine, SessionTable, PaperTable, FindingTable, CheckpointTable
+from hilbert.persistence.schema import (
+    get_engine, SessionTable, PaperTable, FindingTable,
+    CheckpointTable, EmbeddingCacheTable,
+)
 
 
 class SessionManagerError(Exception):
@@ -75,19 +79,38 @@ class SessionManager:
                     created_at=row.created_at,
                     updated_at=row.updated_at,
                     error_message=row.error_message,
+                    tags=row.tags or [],
                 )
         except Exception as e:
             raise SessionManagerError(f"Failed to get session: {e}") from e
 
-    def list_sessions(self) -> List[Session]:
-        """List all sessions."""
+    def list_sessions(
+        self,
+        tags: Optional[List[str]] = None,
+        status: Optional[str] = None,
+        since: Optional[datetime] = None,
+    ) -> List[Session]:
+        """List sessions with optional filters.
+
+        Args:
+            tags: Filter by tags (any match).
+            status: Filter by status string.
+            since: Filter to sessions created after this time.
+        """
         try:
             with SqlSession(self.engine) as db:
-                rows = db.execute(
-                    select(SessionTable).order_by(SessionTable.created_at.desc())
-                ).scalars().all()
-                return [
-                    Session(
+                query = select(SessionTable).order_by(SessionTable.created_at.desc())
+
+                if since:
+                    query = query.where(SessionTable.created_at >= since)
+                if status:
+                    query = query.where(SessionTable.status == status)
+
+                rows = db.execute(query).scalars().all()
+
+                sessions = []
+                for r in rows:
+                    session = Session(
                         session_id=r.session_id,
                         query=r.query,
                         max_rounds=r.max_rounds,
@@ -96,9 +119,16 @@ class SessionManager:
                         created_at=r.created_at,
                         updated_at=r.updated_at,
                         error_message=r.error_message,
+                        tags=r.tags or [],
                     )
-                    for r in rows
-                ]
+
+                    if tags:
+                        if any(t in (session.tags or []) for t in tags):
+                            sessions.append(session)
+                    else:
+                        sessions.append(session)
+
+                return sessions
         except Exception as e:
             raise SessionManagerError(f"Failed to list sessions: {e}") from e
 
@@ -115,6 +145,73 @@ class SessionManager:
                     db.commit()
         except Exception as e:
             raise SessionManagerError(f"Failed to update session: {e}") from e
+
+    def get_session_by_query(self, query: str) -> Optional[Session]:
+        """Return the most recent session that matches this exact query, or None."""
+        try:
+            with SqlSession(self.engine) as db:
+                row = db.execute(
+                    select(SessionTable)
+                    .where(SessionTable.query == query)
+                    .order_by(SessionTable.created_at.desc())
+                ).scalars().first()
+                if not row:
+                    return None
+                return Session(
+                    session_id=row.session_id,
+                    query=row.query,
+                    max_rounds=row.max_rounds,
+                    current_round=row.current_round,
+                    status=SessionStatus(row.status),
+                    created_at=row.created_at,
+                    updated_at=row.updated_at,
+                    error_message=row.error_message,
+                    tags=row.tags or [],
+                )
+        except Exception as e:
+            raise SessionManagerError(f"Failed to query session by query: {e}") from e
+
+    def add_tag(self, session_id: str, tag: str) -> None:
+        """Add a tag to a session."""
+        try:
+            with SqlSession(self.engine) as db:
+                row = db.get(SessionTable, session_id)
+                if row:
+                    tags = row.tags or []
+                    if tag not in tags:
+                        tags.append(tag)
+                        row.tags = tags
+                        row.updated_at = datetime.now()
+                        db.commit()
+        except Exception as e:
+            raise SessionManagerError(f"Failed to add tag: {e}") from e
+
+    def remove_tag(self, session_id: str, tag: str) -> None:
+        """Remove a tag from a session."""
+        try:
+            with SqlSession(self.engine) as db:
+                row = db.get(SessionTable, session_id)
+                if row:
+                    tags = row.tags or []
+                    if tag in tags:
+                        tags.remove(tag)
+                        row.tags = tags
+                        row.updated_at = datetime.now()
+                        db.commit()
+        except Exception as e:
+            raise SessionManagerError(f"Failed to remove tag: {e}") from e
+
+    def update_last_searched_at(self, session_id: str) -> None:
+        """Stamp the session with the current time as last_searched_at."""
+        try:
+            with SqlSession(self.engine) as db:
+                row = db.get(SessionTable, session_id)
+                if row:
+                    row.last_searched_at = datetime.now()
+                    row.updated_at = datetime.now()
+                    db.commit()
+        except Exception as e:
+            raise SessionManagerError(f"Failed to update last_searched_at: {e}") from e
 
     def delete_session(self, session_id: str) -> None:
         """Delete a session and all related data."""
@@ -255,6 +352,71 @@ class SessionManager:
                 ]
         except Exception as e:
             raise SessionManagerError(f"Failed to get findings: {e}") from e
+
+
+class EmbeddingCache:
+    """SQLite-backed cache for embedding vectors keyed on SHA-256(text)."""
+
+    def __init__(self, db_path: Optional[str] = None):
+        settings = get_settings()
+        self.db_path = str(db_path or settings.db_path)
+        self.engine = get_engine(self.db_path)
+        self._model = settings.embedding_model
+
+    @staticmethod
+    def _hash(text: str) -> str:
+        return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+    def get(self, text: str) -> Optional[List[float]]:
+        """Return cached embedding or None."""
+        key = self._hash(text)
+        try:
+            with SqlSession(self.engine) as db:
+                row = db.get(EmbeddingCacheTable, key)
+                if row and row.model == self._model:
+                    return json.loads(row.embedding)
+        except Exception:
+            pass
+        return None
+
+    def set(self, text: str, embedding: List[float]) -> None:
+        """Persist an embedding vector."""
+        key = self._hash(text)
+        try:
+            with SqlSession(self.engine) as db:
+                existing = db.get(EmbeddingCacheTable, key)
+                if existing:
+                    return  # already cached
+                db.add(EmbeddingCacheTable(
+                    content_hash=key,
+                    text_preview=text[:120],
+                    embedding=json.dumps(embedding),
+                    model=self._model,
+                    created_at=datetime.now(),
+                ))
+                db.commit()
+        except Exception:
+            pass  # cache failures are non-fatal
+
+    def get_batch(self, texts: List[str]) -> Dict[str, Optional[List[float]]]:
+        """Return {text: embedding_or_None} for a batch of texts."""
+        return {t: self.get(t) for t in texts}
+
+    def set_batch(self, texts: List[str], embeddings: List[List[float]]) -> None:
+        """Persist a batch of (text, embedding) pairs."""
+        for text, emb in zip(texts, embeddings):
+            self.set(text, emb)
+
+
+_embedding_cache: Optional[EmbeddingCache] = None
+
+
+def get_embedding_cache(db_path: Optional[str] = None) -> EmbeddingCache:
+    """Get the embedding cache singleton."""
+    global _embedding_cache
+    if _embedding_cache is None:
+        _embedding_cache = EmbeddingCache(db_path=db_path)
+    return _embedding_cache
 
 
 _manager: Optional[SessionManager] = None

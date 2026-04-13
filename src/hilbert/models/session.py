@@ -2,7 +2,7 @@
 
 from datetime import datetime
 from enum import Enum
-from typing import Optional
+from typing import List, Optional
 from pydantic import BaseModel, Field
 
 
@@ -31,6 +31,7 @@ class Session(BaseModel):
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)
     error_message: Optional[str] = None
+    tags: List[str] = Field(default_factory=list)
 
     def is_resumable(self) -> bool:
         """Check if session can be resumed."""

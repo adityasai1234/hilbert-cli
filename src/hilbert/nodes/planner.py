@@ -1,20 +1,24 @@
 """Planner node for Hilbert."""
 
-import uuid
-from typing import List
-
-from hilbert.llm import get_client, get_planner_prompt
-from hilbert.llm.utils import parse_json_list
+from hilbert.llm import get_client, get_planner_prompt, get_dimensions_fallback
+from hilbert.llm.utils import parse_json_object
 from hilbert.state.research import ResearchState
 
 
 async def planner_node(state: ResearchState) -> dict:
-    """Decompose query into N sub-questions."""
+    """Decompose query into sub-questions and four research dimensions."""
     query = state["query"]
     max_rounds = state["max_rounds"]
-    n = max_rounds * 1
+    n = max(max_rounds * 2, 4)
+
+    callback = state.get("progress_callback")
+    if callback:
+        callback("planner", {"status": "planning", "query": query})
 
     system_prompt, user_prompt = get_planner_prompt(query, n=n)
+
+    sub_questions = [query]
+    dimensions = get_dimensions_fallback(query)
 
     try:
         client = get_client()
@@ -23,16 +27,21 @@ async def planner_node(state: ResearchState) -> dict:
             system_prompt=system_prompt,
         )
 
-        sub_questions = parse_json_list(content)
+        parsed = parse_json_object(content)
+        if parsed:
+            qs = parsed.get("sub_questions", [])
+            dims = parsed.get("dimensions", [])
+            if qs:
+                sub_questions = [str(q) for q in qs]
+            if dims and len(dims) == 4:
+                dimensions = dims
 
-        if not sub_questions:
-            sub_questions = [query]
-
-    except Exception as e:
-        sub_questions = [query]
+    except Exception:
+        pass  # keep fallbacks
 
     return {
         "sub_questions": sub_questions,
+        "research_dimensions": dimensions,
         "round": 1,
         "status": "searching",
     }

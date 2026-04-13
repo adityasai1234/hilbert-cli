@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Any, Callable, Dict, List, Optional, TypedDict
 
 from hilbert.models.paper import Paper
-from hilbert.models.finding import Finding
+from hilbert.models.finding import Finding, Contradiction
 from hilbert.models.report import Report
 
 
@@ -32,6 +32,7 @@ class ResearchState(TypedDict):
     status: str
     error_message: Optional[str]
     started_at: Optional[datetime]
+    contradictions: List[Contradiction]          # detected contradictions between findings
     findings_centroid: Optional[List[float]]   # mean embedding of findings after last round
     converged: bool                            # True if early-stopped by convergence
     progress_callback: Optional[Callable[[str, Dict[str, Any]], None]]
@@ -52,6 +53,7 @@ def create_initial_state(
         "papers": [],
         "papers_consulted": 0,
         "findings": [],
+        "contradictions": [],
         "report": None,
         "status": "planning",
         "error_message": None,

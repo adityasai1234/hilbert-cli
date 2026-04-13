@@ -3,14 +3,39 @@
 import uuid
 from typing import List
 
+from hilbert.config.settings import get_settings
 from hilbert.llm import get_client, get_hypothesis_prompt
 from hilbert.llm.utils import parse_json_list
 from hilbert.models.hypothesis import Hypothesis
 from hilbert.state.research import ResearchState
 
 
+def _hypotheses_to_markdown(hypotheses: List[Hypothesis]) -> str:
+    """Render hypotheses as a markdown section."""
+    if not hypotheses:
+        return ""
+    lines = [
+        "",
+        "---",
+        "",
+        "## Open Hypotheses & Research Directions",
+        "",
+        "> *The following hypotheses were generated from the verified findings above.*",
+        "> *They are speculative and intended to guide future investigation.*",
+        "",
+    ]
+    for i, h in enumerate(hypotheses, start=1):
+        conf_pct = int(h.confidence * 100)
+        lines.append(f"**{i}. {h.text}**")
+        if h.basis:
+            lines.append(f"> *Basis:* {h.basis}")
+        lines.append(f"> *Plausibility:* {conf_pct}%")
+        lines.append("")
+    return "\n".join(lines)
+
+
 async def hypothesis_node(state: ResearchState) -> dict:
-    """Generate 3-5 novel hypotheses from verified findings."""
+    """Generate 3-5 novel hypotheses from verified findings and append to report.md."""
     query = state["query"]
     findings = state.get("findings", [])
 
@@ -56,6 +81,16 @@ async def hypothesis_node(state: ResearchState) -> dict:
             )
     except Exception:
         pass  # non-fatal — report still useful without hypotheses
+
+    # Append to the report.md written by the writer node
+    if hypotheses:
+        settings = get_settings()
+        report_path = settings.output_dir / "report.md"
+        try:
+            existing = report_path.read_text() if report_path.exists() else ""
+            report_path.write_text(existing + _hypotheses_to_markdown(hypotheses))
+        except Exception:
+            pass
 
     if callback:
         callback("hypothesis", {"generated": len(hypotheses)})

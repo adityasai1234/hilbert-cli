@@ -1,9 +1,10 @@
 """Session manager for Hilbert SQLite persistence."""
 
+import hashlib
 import json
 import uuid
 from datetime import datetime
-from typing import List, Optional
+from typing import Dict, List, Optional
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session as SqlSession
 
@@ -11,7 +12,10 @@ from hilbert.config.settings import get_settings
 from hilbert.models.session import Session, SessionStatus
 from hilbert.models import Paper, Finding
 from hilbert.state.research import ResearchState
-from hilbert.persistence.schema import get_engine, SessionTable, PaperTable, FindingTable, CheckpointTable
+from hilbert.persistence.schema import (
+    get_engine, SessionTable, PaperTable, FindingTable,
+    CheckpointTable, EmbeddingCacheTable,
+)
 
 
 class SessionManagerError(Exception):
@@ -255,6 +259,71 @@ class SessionManager:
                 ]
         except Exception as e:
             raise SessionManagerError(f"Failed to get findings: {e}") from e
+
+
+class EmbeddingCache:
+    """SQLite-backed cache for embedding vectors keyed on SHA-256(text)."""
+
+    def __init__(self, db_path: Optional[str] = None):
+        settings = get_settings()
+        self.db_path = str(db_path or settings.db_path)
+        self.engine = get_engine(self.db_path)
+        self._model = settings.embedding_model
+
+    @staticmethod
+    def _hash(text: str) -> str:
+        return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+    def get(self, text: str) -> Optional[List[float]]:
+        """Return cached embedding or None."""
+        key = self._hash(text)
+        try:
+            with SqlSession(self.engine) as db:
+                row = db.get(EmbeddingCacheTable, key)
+                if row and row.model == self._model:
+                    return json.loads(row.embedding)
+        except Exception:
+            pass
+        return None
+
+    def set(self, text: str, embedding: List[float]) -> None:
+        """Persist an embedding vector."""
+        key = self._hash(text)
+        try:
+            with SqlSession(self.engine) as db:
+                existing = db.get(EmbeddingCacheTable, key)
+                if existing:
+                    return  # already cached
+                db.add(EmbeddingCacheTable(
+                    content_hash=key,
+                    text_preview=text[:120],
+                    embedding=json.dumps(embedding),
+                    model=self._model,
+                    created_at=datetime.now(),
+                ))
+                db.commit()
+        except Exception:
+            pass  # cache failures are non-fatal
+
+    def get_batch(self, texts: List[str]) -> Dict[str, Optional[List[float]]]:
+        """Return {text: embedding_or_None} for a batch of texts."""
+        return {t: self.get(t) for t in texts}
+
+    def set_batch(self, texts: List[str], embeddings: List[List[float]]) -> None:
+        """Persist a batch of (text, embedding) pairs."""
+        for text, emb in zip(texts, embeddings):
+            self.set(text, emb)
+
+
+_embedding_cache: Optional[EmbeddingCache] = None
+
+
+def get_embedding_cache(db_path: Optional[str] = None) -> EmbeddingCache:
+    """Get the embedding cache singleton."""
+    global _embedding_cache
+    if _embedding_cache is None:
+        _embedding_cache = EmbeddingCache(db_path=db_path)
+    return _embedding_cache
 
 
 _manager: Optional[SessionManager] = None

@@ -99,12 +99,27 @@ class ArXivClient:
         self,
         query: str,
         max_results: Optional[int] = None,
+        submitted_after: Optional[datetime] = None,
     ) -> List[Paper]:
-        """Search ArXiv for papers."""
+        """Search ArXiv for papers.
+
+        Args:
+            query: Search terms.
+            max_results: Maximum number of results (default: self.max_results).
+            submitted_after: If given, restrict to papers submitted on or after
+                this date using the ArXiv submittedDate filter.  Useful for
+                incremental re-runs so we only fetch papers newer than the last
+                search.
+        """
         max_results = max_results or self.max_results
 
+        search_query = f"all:{query}"
+        if submitted_after:
+            date_str = submitted_after.strftime("%Y%m%d")
+            search_query += f" AND submittedDate:[{date_str}000000 TO 99991231235959]"
+
         params = {
-            "search_query": f"all:{query}",
+            "search_query": search_query,
             "start": 0,
             "max_results": max_results,
             "sortBy": "relevance",

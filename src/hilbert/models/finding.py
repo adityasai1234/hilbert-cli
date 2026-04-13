@@ -32,6 +32,29 @@ class Finding(BaseModel):
         return "unverified"
 
 
+class Contradiction(BaseModel):
+    """Two findings that potentially contradict each other."""
+
+    contradiction_id: str
+    finding_id_a: str
+    finding_id_b: str
+    claim_a: str = ""
+    claim_b: str = ""
+    similarity: float = Field(default=0.0, ge=0.0, le=1.0,
+        description="Cosine similarity between the two claims (low = more contradictory)")
+    description: str = ""           # LLM-generated explanation
+    confirmed: bool = False         # True if LLM confirmed this as a real contradiction
+    created_at: datetime = Field(default_factory=datetime.now)
+
+    def severity_label(self) -> str:
+        """Return FATAL/MAJOR/MINOR based on similarity."""
+        if self.similarity < 0.05:
+            return "FATAL"
+        if self.similarity < 0.10:
+            return "MAJOR"
+        return "MINOR"
+
+
 class Gap(BaseModel):
     """A gap in coverage identified by the reviewer."""
 

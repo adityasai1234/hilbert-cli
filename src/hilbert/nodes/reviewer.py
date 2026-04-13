@@ -40,10 +40,23 @@ async def reviewer_node(state: ResearchState) -> dict:
         for f in findings
     ]
 
+    contradictions = state.get("contradictions", [])
+    contradictions_data = [
+        {
+            "claim_a": c.claim_a,
+            "claim_b": c.claim_b,
+            "similarity": round(c.similarity, 3),
+            "description": c.description,
+            "severity": c.severity_label(),
+        }
+        for c in contradictions
+    ]
+
     system_prompt, user_prompt = get_reviewer_prompt(
         query=query,
         sub_questions=sub_questions,
         findings=findings_data,
+        contradictions=contradictions_data,
     )
 
     gaps: List[Gap] = []

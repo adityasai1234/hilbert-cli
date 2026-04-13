@@ -85,6 +85,9 @@ Sub-questions that should be answered: {sub_questions}
 Verified findings (each has confidence 0-1 and is_verified flag):
 {findings}
 
+Already-detected contradictions (LLM-confirmed opposing claim pairs):
+{contradictions}
+
 Output format:
 {{
   "gaps": [
@@ -95,7 +98,7 @@ Output format:
     }}
   ],
   "single_source_claims": ["finding_id"],
-  "contradictions": ["brief description of contradiction"]
+  "unresolved_contradictions": ["brief description of any contradiction not yet addressed"]
 }}"""
 
 
@@ -156,16 +159,19 @@ def get_reviewer_prompt(
     query: str,
     sub_questions: list[str],
     findings: list[dict],
+    contradictions: list[dict] | None = None,
 ) -> tuple[str, str]:
-    """Get reviewer prompts."""
+    """Get reviewer prompts, optionally including detected contradictions."""
     import json
     sq_text = "\n".join(f"- {sq}" for sq in sub_questions)
     findings_text = json.dumps(findings, indent=2)
+    contradictions_text = json.dumps(contradictions or [], indent=2)
 
     return REVIEWER_SYSTEM, REVIEWER_USER.format(
         query=query,
         sub_questions=sq_text,
         findings=findings_text,
+        contradictions=contradictions_text,
     )
 
 

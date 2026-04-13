@@ -120,6 +120,42 @@ class SessionManager:
         except Exception as e:
             raise SessionManagerError(f"Failed to update session: {e}") from e
 
+    def get_session_by_query(self, query: str) -> Optional[Session]:
+        """Return the most recent session that matches this exact query, or None."""
+        try:
+            with SqlSession(self.engine) as db:
+                row = db.execute(
+                    select(SessionTable)
+                    .where(SessionTable.query == query)
+                    .order_by(SessionTable.created_at.desc())
+                ).scalars().first()
+                if not row:
+                    return None
+                return Session(
+                    session_id=row.session_id,
+                    query=row.query,
+                    max_rounds=row.max_rounds,
+                    current_round=row.current_round,
+                    status=SessionStatus(row.status),
+                    created_at=row.created_at,
+                    updated_at=row.updated_at,
+                    error_message=row.error_message,
+                )
+        except Exception as e:
+            raise SessionManagerError(f"Failed to query session by query: {e}") from e
+
+    def update_last_searched_at(self, session_id: str) -> None:
+        """Stamp the session with the current time as last_searched_at."""
+        try:
+            with SqlSession(self.engine) as db:
+                row = db.get(SessionTable, session_id)
+                if row:
+                    row.last_searched_at = datetime.now()
+                    row.updated_at = datetime.now()
+                    db.commit()
+        except Exception as e:
+            raise SessionManagerError(f"Failed to update last_searched_at: {e}") from e
+
     def delete_session(self, session_id: str) -> None:
         """Delete a session and all related data."""
         try:

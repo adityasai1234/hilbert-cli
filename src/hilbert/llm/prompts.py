@@ -100,27 +100,32 @@ Output format:
 
 
 WRITER_SYSTEM = """You are the Writer node of Hilbert, a research agent.
-Your task is to structure findings into a research report.
-Create a well-organized report with:
-- Executive summary
-- Thematic sections
-- Proper citations with confidence levels
-- Sources section
+Your task is to synthesise verified research findings into a high-quality report.
 
-Output ONLY the report in markdown format."""
+Citation rules (MANDATORY):
+- Every factual claim MUST end with an inline citation: [N] where N is the
+  citation_number from the sources list.
+- Use [N, M] for claims supported by multiple sources.
+- Never invent a citation number that is not in the provided sources.
+- Unsourced claims must NOT appear in the report.
+
+Structure:
+1. ## Executive Summary  (2-3 sentences, no citations needed)
+2. ## [Thematic Section] (repeat as needed, with inline [N] citations)
+3. Do NOT include a References section — it is added automatically.
+
+Output ONLY the markdown body (sections 1-2). No preamble, no trailing notes."""
 
 
-WRITER_USER = """Create a research report for the query: "{query}"
+WRITER_USER = """Write a research report for: "{query}"
 
-Title suggestions: {title_suggestions}
-
-Findings:
+Verified findings (each has a citation_number for inline [N] use):
 {findings}
 
-Sources:
+Numbered sources:
 {sources}
 
-Create a markdown report with sections."""
+Remember: cite every factual claim with [N] from the citation_number field."""
 
 
 def get_planner_prompt(query: str, n: int = 4) -> tuple[str, str]:
@@ -170,20 +175,30 @@ def get_writer_prompt(
     sources: list[dict],
     title_suggestions: Optional[str] = None,
 ) -> tuple[str, str]:
-    """Get writer prompts."""
-    findings_json = "\n\n".join(
-        f"- *{f.get('claim', '')}* [confidence: {f.get('confidence', 0.0):.2f}]"
-        for f in findings
+    """Get writer prompts with inline citation numbering."""
+    import json as _json
+
+    findings_text = _json.dumps(
+        [
+            {
+                "citation_number": f.get("citation_number", "?"),
+                "claim": f.get("claim", ""),
+                "confidence": round(f.get("confidence", 0.0), 2),
+                "is_verified": f.get("is_verified", False),
+            }
+            for f in findings
+        ],
+        indent=2,
     )
-    
-    sources_json = "\n".join(
-        f"{i+1}. {s.get('title', 'Unknown')} ({s.get('published_date', 'n.d.')})"
+
+    sources_text = "\n".join(
+        f"[{s.get('citation_number', i+1)}] {s.get('title', 'Unknown')} "
+        f"— {', '.join(s.get('authors', [])[:2])} ({s.get('published_date', 'n.d.')})"
         for i, s in enumerate(sources)
     )
-    
+
     return WRITER_SYSTEM, WRITER_USER.format(
         query=query,
-        title_suggestions=title_suggestions or query,
-        findings=findings_json,
-        sources=sources_json,
+        findings=findings_text,
+        sources=sources_text,
     )

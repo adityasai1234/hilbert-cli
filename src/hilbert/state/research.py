@@ -5,6 +5,7 @@ from typing import Any, Callable, Dict, List, Optional, Set, TypedDict
 
 from hilbert.models.paper import Paper
 from hilbert.models.finding import Finding, Contradiction
+from hilbert.models.hypothesis import Hypothesis
 from hilbert.models.report import Report
 
 
@@ -36,6 +37,7 @@ class ResearchState(TypedDict):
     citation_graph: Dict[str, List[str]]         # paper_id → list of cited paper_ids (within corpus)
     findings_centroid: Optional[List[float]]   # mean embedding of findings after last round
     converged: bool                            # True if early-stopped by convergence
+    hypotheses: List[Hypothesis]               # novel hypotheses generated from findings
     progress_callback: Optional[Callable[[str, Dict[str, Any]], None]]
 
 
@@ -62,5 +64,6 @@ def create_initial_state(
         "started_at": datetime.now(),
         "findings_centroid": None,
         "converged": False,
+        "hypotheses": [],
         "progress_callback": progress_callback,
     }

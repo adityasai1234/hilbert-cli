@@ -4,7 +4,11 @@ import datetime
 from typing import List
 
 from hilbert.models import Paper
+from hilbert.sources import cosine_similarity, embed_papers, get_embedding_client
 from hilbert.state.research import ResearchState
+
+# Cosine similarity threshold above which two papers are near-duplicates
+_SEMANTIC_DEDUP_THRESHOLD = 0.92
 
 # Source quality tiers used in ranking (higher = better)
 # Tier 1: published in a venue with a DOI — peer-reviewed
@@ -61,23 +65,64 @@ def rank_papers(papers: List[Paper], query: str) -> List[Paper]:
     return sorted(papers, key=score, reverse=True)
 
 
+async def semantic_deduplicate(papers: List[Paper]) -> List[Paper]:
+    """Remove near-duplicate papers using abstract embedding similarity.
+
+    After exact dedup, embed all remaining abstracts and drop any paper
+    whose embedding is within _SEMANTIC_DEDUP_THRESHOLD of a higher-ranked
+    paper (by citation count). O(n²) on the post-exact-dedup list which is
+    typically 30-60 papers — acceptable cost.
+    """
+    if len(papers) < 2:
+        return papers
+
+    try:
+        client = get_embedding_client()
+        embeddings = await embed_papers(papers, client)
+    except Exception:
+        return papers  # fall back gracefully
+
+    # Sort by citation count descending so we keep the better-cited version
+    indexed = sorted(enumerate(papers), key=lambda t: t[1].citation_count, reverse=True)
+    kept_indices: List[int] = []
+    kept_embeddings: List[List[float]] = []
+
+    for orig_idx, paper in indexed:
+        emb = embeddings[orig_idx]
+        is_dup = any(
+            cosine_similarity(emb, kept_emb) >= _SEMANTIC_DEDUP_THRESHOLD
+            for kept_emb in kept_embeddings
+        )
+        if not is_dup:
+            kept_indices.append(orig_idx)
+            kept_embeddings.append(emb)
+
+    # Preserve original ordering among kept papers
+    kept_set = set(kept_indices)
+    return [p for i, p in enumerate(papers) if i in kept_set]
+
+
 async def merger_node(state: ResearchState) -> dict:
-    """Dedup, rank by quality tier + citations, and decide next phase."""
+    """Exact dedup → semantic dedup → rank → decide next phase."""
     papers = state.get("papers", [])
     query = state["query"]
     round_num = state["round"]
     max_rounds = state["max_rounds"]
-
     callback = state.get("progress_callback")
 
+    before_exact = len(papers)
     papers = deduplicate_papers(papers)
+    papers = await semantic_deduplicate(papers)
     papers = rank_papers(papers, query)
 
     top_k = 20
     papers = papers[:top_k]
 
     if callback:
-        callback("merger", {"papers_after_filter": len(papers)})
+        callback("merger", {
+            "papers_before_dedup": before_exact,
+            "papers_after_filter": len(papers),
+        })
 
     next_status = "synthesizing" if round_num >= max_rounds else "searching"
 

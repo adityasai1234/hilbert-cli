@@ -22,7 +22,7 @@ class IPCServer:
     def __init__(self):
         self.running = False
 
-    async def handle_command(self, command: str, args: list[str], options: Dict[str, Any]) -> Dict[str, Any]:
+    async def handle_command(self, command: str, args: list[str], options: Dict[str, Any], msg_id: str = "") -> Dict[str, Any]:
         """Handle incoming IPC commands."""
         from hilbert.graph import run_research
         from hilbert.config.settings import get_settings
@@ -38,7 +38,17 @@ class IPCServer:
 
             log(f"Running research: {topic}")
 
-            result = await run_research(topic, max_rounds=rounds)
+            # Build a progress callback that streams node transitions to the CLI
+            # msg_id is captured from the outer scope
+            _msg_id = msg_id  # local alias for lambda capture
+
+            def _progress(node: str, data: Dict[str, Any]) -> None:
+                asyncio.get_event_loop().call_soon_threadsafe(
+                    asyncio.ensure_future,
+                    self.send_stream(_msg_id, "progress", {"current_node": node, **data}),
+                )
+
+            result = await run_research(topic, max_rounds=rounds, progress_callback=_progress)
 
             report = result.get("report")
             if report:
@@ -48,6 +58,7 @@ class IPCServer:
                         f"{settings.output_dir}/report.md",
                         f"{settings.output_dir}/report.json",
                         f"{settings.output_dir}/report.bib",
+                        f"{settings.output_dir}/report.provenance.md",
                     ],
                 }
             return {"error": "Research failed"}
@@ -211,7 +222,7 @@ class IPCServer:
                     options = msg.get("options", {})
 
                     try:
-                        result = await self.handle_command(command, args, options)
+                        result = await self.handle_command(command, args, options, msg_id=msg_id)
                         await self.send_response(msg_id, result)
                     except Exception as e:
                         await self.send_response(msg_id, {"error": str(e)}, "error")

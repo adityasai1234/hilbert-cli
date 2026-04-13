@@ -177,6 +177,30 @@ class SemanticScholarClient:
             return []
 
 
+    async def get_references(self, paper_id: str, limit: int = 20) -> list[str]:
+        """Return Semantic Scholar paper IDs that this paper cites (references).
+
+        Returns a list of paperId strings, not full Paper objects, to keep
+        this cheap — we only need IDs for the within-corpus citation graph.
+        """
+        url = f"{SEMANTIC_SCHOLAR_API_URL}/paper/{paper_id}/references"
+        params = {"limit": limit, "fields": "paperId"}
+
+        try:
+            session = await self._get_session()
+            async with session.get(url, params=params) as response:
+                if response.status != 200:
+                    return []
+                data = await response.json()
+            return [
+                ref["citedPaper"]["paperId"]
+                for ref in data.get("data", [])
+                if ref.get("citedPaper", {}).get("paperId")
+            ]
+        except Exception:
+            return []
+
+
 _client: Optional[SemanticScholarClient] = None
 
 

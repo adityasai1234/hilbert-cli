@@ -53,9 +53,25 @@ def deduplicate_papers(papers: List[Paper]) -> List[Paper]:
     return unique
 
 
-def rank_papers(papers: List[Paper], query: str) -> List[Paper]:
-    """Rank papers by citation count, recency, and source quality tier."""
+def rank_papers(
+    papers: List[Paper],
+    query: str,
+    citation_graph: Optional[Dict[str, List[str]]] = None,
+) -> List[Paper]:
+    """Rank papers by citation count, recency, source quality tier, and within-corpus authority.
+
+    Within-corpus authority: how many other papers in the result set cite this
+    paper.  Each in-corpus citation adds +1.5 to the score, making topically
+    central papers rise above globally popular-but-off-topic ones.
+    """
     now = datetime.datetime.now().date()
+
+    # Build reverse-index: paper_id → how many corpus papers cite it
+    in_corpus_cited_by: Dict[str, int] = {}
+    if citation_graph:
+        for cited_list in citation_graph.values():
+            for cited_id in cited_list:
+                in_corpus_cited_by[cited_id] = in_corpus_cited_by.get(cited_id, 0) + 1
 
     def score(paper: Paper) -> float:
         s = paper.citation_count * 0.1
@@ -66,6 +82,8 @@ def rank_papers(papers: List[Paper], query: str) -> List[Paper]:
             except Exception:
                 pass
         s += _TIER_SCORE[source_quality_tier(paper)]
+        # Within-corpus authority boost (1.5 per in-corpus citation)
+        s += in_corpus_cited_by.get(paper.paper_id, 0) * 1.5
         return s
 
     return sorted(papers, key=score, reverse=True)
@@ -201,12 +219,16 @@ async def merger_node(state: ResearchState) -> dict:
     before_exact = len(papers)
     papers = deduplicate_papers(papers)
     papers = await semantic_deduplicate(papers)
-    papers = rank_papers(papers, query)
+
+    # Build citation graph on the post-dedup pool (before top-k trim) so we
+    # capture intra-corpus links among all unique candidates.
+    citation_graph = await build_citation_graph(papers)
+
+    # Rank with within-corpus authority boost, then MMR-trim to top_k.
+    papers = rank_papers(papers, query, citation_graph=citation_graph)
 
     top_k = settings.top_k
     papers = await mmr_select(papers, query, k=top_k, lam=settings.mmr_lambda)
-
-    citation_graph = await build_citation_graph(papers)
 
     if callback:
         callback("merger", {

@@ -1,7 +1,7 @@
 """ResearchState for LangGraph."""
 
 from datetime import datetime
-from typing import Any, Callable, Dict, List, Optional, TypedDict
+from typing import Any, Callable, Dict, List, Optional, Set, TypedDict
 
 from hilbert.models.paper import Paper
 from hilbert.models.finding import Finding, Contradiction
@@ -33,6 +33,7 @@ class ResearchState(TypedDict):
     error_message: Optional[str]
     started_at: Optional[datetime]
     contradictions: List[Contradiction]          # detected contradictions between findings
+    citation_graph: Dict[str, List[str]]         # paper_id → list of cited paper_ids (within corpus)
     findings_centroid: Optional[List[float]]   # mean embedding of findings after last round
     converged: bool                            # True if early-stopped by convergence
     progress_callback: Optional[Callable[[str, Dict[str, Any]], None]]
@@ -54,6 +55,7 @@ def create_initial_state(
         "papers_consulted": 0,
         "findings": [],
         "contradictions": [],
+        "citation_graph": {},
         "report": None,
         "status": "planning",
         "error_message": None,

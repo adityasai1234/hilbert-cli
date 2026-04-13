@@ -175,6 +175,57 @@ def get_reviewer_prompt(
     )
 
 
+HYPOTHESIS_SYSTEM = """You are the Hypothesis node of Hilbert, a research agent.
+Given a set of verified research findings, generate 3-5 novel hypotheses or open
+research questions that follow naturally from the evidence but are not yet answered.
+
+Each hypothesis should:
+- Build on at least one specific finding
+- Identify a gap, tension, or logical extension in the current evidence
+- Be testable or researchable in principle
+- Be distinct from the other hypotheses
+
+Output ONLY a valid JSON array. No other text."""
+
+
+HYPOTHESIS_USER = """Generate 3-5 novel hypotheses for this research topic: "{query}"
+
+Verified findings:
+{findings}
+
+Output format:
+[{{
+  "text": "hypothesis or open research question",
+  "basis": "brief rationale referencing specific findings",
+  "related_finding_ids": ["finding_id_1", "finding_id_2"],
+  "confidence": 0.0
+}}]
+
+Set confidence to a float 0-1 indicating how plausible the hypothesis is given
+the evidence (1.0 = very strongly implied, 0.5 = speculative but reasonable)."""
+
+
+def get_hypothesis_prompt(query: str, findings: list[dict]) -> tuple[str, str]:
+    """Get hypothesis generation prompts."""
+    import json
+    findings_text = json.dumps(
+        [
+            {
+                "finding_id": f.get("finding_id", ""),
+                "claim": f.get("claim", ""),
+                "confidence": round(f.get("confidence", 0.0), 2),
+            }
+            for f in findings
+            if f.get("is_verified", False)
+        ],
+        indent=2,
+    )
+    return HYPOTHESIS_SYSTEM, HYPOTHESIS_USER.format(
+        query=query,
+        findings=findings_text,
+    )
+
+
 def get_writer_prompt(
     query: str,
     findings: list[dict],

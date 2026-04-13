@@ -7,6 +7,7 @@ from hilbert.llm.prompts import (
     get_synthesis_prompt,
     get_reviewer_prompt,
     get_writer_prompt,
+    get_hypothesis_prompt,
 )
 
 __all__ = [
@@ -19,4 +20,5 @@ __all__ = [
     "get_synthesis_prompt",
     "get_reviewer_prompt",
     "get_writer_prompt",
+    "get_hypothesis_prompt",
 ]

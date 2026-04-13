@@ -1,7 +1,7 @@
 """Report models for Hilbert."""
 
 from datetime import datetime
-from typing import Optional
+from typing import Dict, List, Optional
 from pydantic import BaseModel, Field
 
 
@@ -12,15 +12,17 @@ class Report(BaseModel):
     title: str
     query: str
     executive_summary: str = ""
-    sections: dict[str, str] = Field(default_factory=dict)
-    sources: list[dict] = Field(default_factory=list)
-    findings_summary: list[dict] = Field(default_factory=list)
+    sections: Dict[str, str] = Field(default_factory=dict)
+    sources: List[dict] = Field(default_factory=list)
+    # Mapping from source number (1-based str) to paper_id for inline [N] references
+    source_index: Dict[str, str] = Field(default_factory=dict)
+    findings_summary: List[dict] = Field(default_factory=list)
     bibliography: str = ""
     created_at: datetime = Field(default_factory=datetime.now)
     status: str = "draft"  # draft, final
 
     def to_markdown(self) -> str:
-        """Export report as Markdown."""
+        """Export report as Markdown with inline [N] citation support."""
         lines = [
             f"# {self.title}",
             "",
@@ -33,23 +35,43 @@ class Report(BaseModel):
             lines.extend(["## Executive Summary", self.executive_summary, ""])
 
         for section_name, section_content in self.sections.items():
-            lines.extend([f"## {section_name}", section_content, ""])
+            lines.extend([f"## {section_name.title()}", section_content, ""])
 
         if self.findings_summary:
-            lines.append("## Findings Summary")
+            lines.extend(["## Key Findings", ""])
             for f in self.findings_summary:
                 conf = f.get("confidence", 0.0)
                 label = f.get("confidence_label", "unverified")
-                lines.append(f"- {f.get('claim', '')} [{label}: {conf:.2f}]")
+                verified_icon = "✓" if f.get("is_verified") else "○"
+                lines.append(
+                    f"- {verified_icon} {f.get('claim', '')} "
+                    f"*(confidence: {conf:.2f}, {label})*"
+                )
+            lines.append("")
 
         if self.sources:
-            lines.append("## Sources")
+            lines.extend(["## References", ""])
             for i, src in enumerate(self.sources, 1):
                 title = src.get("title", "Unknown")
                 authors = src.get("authors", [])
                 year = src.get("published_date", "n.d.")
                 url = src.get("url", "")
-                lines.append(f"{i}. {title}, {' et al.' if len(authors) > 2 else ', '.join(authors[:2])} ({year}). {url}")
+                doi = src.get("doi", "")
+
+                if isinstance(authors, list):
+                    author_str = (
+                        ", ".join(str(a) for a in authors[:2])
+                        + (" et al." if len(authors) > 2 else "")
+                    )
+                else:
+                    author_str = str(authors)
+
+                ref = f"[{i}] {author_str} ({year}). *{title}*."
+                if doi:
+                    ref += f" https://doi.org/{doi}"
+                elif url:
+                    ref += f" {url}"
+                lines.append(ref)
 
         return "\n".join(lines)
 
@@ -62,6 +84,7 @@ class Report(BaseModel):
             "executive_summary": self.executive_summary,
             "sections": self.sections,
             "sources": self.sources,
+            "source_index": self.source_index,
             "findings_summary": self.findings_summary,
             "created_at": self.created_at.isoformat(),
             "status": self.status,

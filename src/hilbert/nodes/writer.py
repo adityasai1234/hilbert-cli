@@ -189,6 +189,29 @@ def generate_provenance(
         for g in fatal_gaps + major_gaps:
             lines.append(f"- [{g.severity}] {g.description}")
 
+    # --- Within-corpus citation authority ---
+    citation_graph: dict = state.get("citation_graph") or {}
+    if citation_graph:
+        # Count how many corpus papers cite each paper_id
+        in_corpus_cited_by: dict = {}
+        for cited_list in citation_graph.values():
+            for cited_id in cited_list:
+                in_corpus_cited_by[cited_id] = in_corpus_cited_by.get(cited_id, 0) + 1
+
+        if in_corpus_cited_by:
+            # Build paper_id → title lookup
+            id_to_title = {s["paper_id"]: s["title"] for s in source_data}
+            top_cited = sorted(
+                in_corpus_cited_by.items(), key=lambda t: t[1], reverse=True
+            )[:5]
+            lines.extend([
+                "",
+                "## Top cross-cited papers (within corpus)",
+            ])
+            for pid, count in top_cited:
+                title = id_to_title.get(pid, pid)
+                lines.append(f"- [{count} in-corpus citation{'s' if count > 1 else ''}] **{title}**")
+
     lines.extend([
         "",
         "## Sub-questions",

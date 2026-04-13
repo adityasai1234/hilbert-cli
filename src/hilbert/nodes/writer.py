@@ -139,7 +139,8 @@ def generate_provenance(
         f"- **Date:** {now.strftime('%Y-%m-%d %H:%M:%S')}",
         f"- **Duration:** {duration_s}s",
         f"- **Model:** {settings.model}",
-        f"- **Rounds completed:** {state.get('round', 1)} / {state['max_rounds']}",
+        f"- **Rounds completed:** {state.get('round', 1)} / {state['max_rounds']}"
+        + (" *(converged early)*" if state.get("converged") else ""),
         f"- **Research dimensions:** {', '.join(dim_labels) or 'default'}",
         "",
         "## Source pipeline",

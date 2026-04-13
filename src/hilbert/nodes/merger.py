@@ -1,7 +1,7 @@
 """Merger node for Hilbert."""
 
 import datetime
-from typing import List
+from typing import List, Optional
 
 from hilbert.config.settings import get_settings
 from hilbert.models import Paper
@@ -10,6 +10,9 @@ from hilbert.state.research import ResearchState
 
 # Cosine similarity threshold above which two papers are near-duplicates
 _SEMANTIC_DEDUP_THRESHOLD = 0.92
+
+# Centroid similarity above which we consider findings converged and stop early
+_CONVERGENCE_THRESHOLD = 0.90
 
 # Source quality tiers used in ranking (higher = better)
 # Tier 1: published in a venue with a DOI — peer-reviewed
@@ -180,12 +183,46 @@ async def merger_node(state: ResearchState) -> dict:
             "papers_after_filter": len(papers),
         })
 
-    next_status = "synthesizing" if round_num >= max_rounds else "searching"
+    # --- Convergence detection ---
+    # Embed current findings (from prior round), compare centroid to last round.
+    # If the research "stopped moving", skip further rounds.
+    prev_centroid: Optional[List[float]] = state.get("findings_centroid")
+    findings = state.get("findings", [])
+    new_centroid: Optional[List[float]] = None
+    converged = False
+
+    if findings:
+        try:
+            emb_client = get_embedding_client()
+            claim_embs = await emb_client.embed_texts([f.claim for f in findings])
+            import numpy as np
+            new_centroid = np.mean(claim_embs, axis=0).tolist()
+
+            if prev_centroid is not None:
+                sim = cosine_similarity(new_centroid, prev_centroid)
+                if sim >= _CONVERGENCE_THRESHOLD:
+                    converged = True
+        except Exception:
+            pass
+
+    if round_num >= max_rounds or converged:
+        next_status = "synthesizing"
+    else:
+        next_status = "searching"
+
+    if callback:
+        callback("merger", {
+            "papers_before_dedup": before_exact,
+            "papers_after_filter": len(papers),
+            "converged": converged,
+        })
 
     return {
         "papers": papers,
         "round": round_num + 1,
         "status": next_status,
+        "findings_centroid": new_centroid,
+        "converged": converged,
     }
 
 

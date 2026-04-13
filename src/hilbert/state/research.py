@@ -32,6 +32,8 @@ class ResearchState(TypedDict):
     status: str
     error_message: Optional[str]
     started_at: Optional[datetime]
+    findings_centroid: Optional[List[float]]   # mean embedding of findings after last round
+    converged: bool                            # True if early-stopped by convergence
     progress_callback: Optional[Callable[[str, Dict[str, Any]], None]]
 
 
@@ -54,5 +56,7 @@ def create_initial_state(
         "status": "planning",
         "error_message": None,
         "started_at": datetime.now(),
+        "findings_centroid": None,
+        "converged": False,
         "progress_callback": progress_callback,
     }

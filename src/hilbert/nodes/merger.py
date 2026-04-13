@@ -1,16 +1,31 @@
 """Merger node for Hilbert."""
 
-import uuid
+import datetime
 from typing import List
 
 from hilbert.models import Paper
 from hilbert.state.research import ResearchState
 
+# Source quality tiers used in ranking (higher = better)
+# Tier 1: published in a venue with a DOI — peer-reviewed
+# Tier 2: ArXiv preprint (no DOI, has arxiv_id)
+# Tier 3: unknown provenance
+_TIER_SCORE = {1: 2.0, 2: 1.0, 3: 0.0}
+
+
+def source_quality_tier(paper: Paper) -> int:
+    """Return quality tier 1-3 for a paper."""
+    if paper.doi:
+        return 1
+    if paper.arxiv_id:
+        return 2
+    return 3
+
 
 def deduplicate_papers(papers: List[Paper]) -> List[Paper]:
     """Deduplicate papers by DOI or arXiv ID."""
-    seen = set()
-    unique = []
+    seen: set = set()
+    unique: List[Paper] = []
 
     for paper in papers:
         key = None
@@ -29,27 +44,31 @@ def deduplicate_papers(papers: List[Paper]) -> List[Paper]:
 
 
 def rank_papers(papers: List[Paper], query: str) -> List[Paper]:
-    """Rank papers by basic relevance (citation count + recency)."""
+    """Rank papers by citation count, recency, and source quality tier."""
+    now = datetime.datetime.now().date()
+
     def score(paper: Paper) -> float:
         s = paper.citation_count * 0.1
         if paper.published_date:
-            import datetime
             try:
-                age = (datetime.datetime.now().date() - paper.published_date).days
-                s += max(0, 1 - age / 3650)
+                age_days = (now - paper.published_date).days
+                s += max(0.0, 1.0 - age_days / 3650)
             except Exception:
                 pass
+        s += _TIER_SCORE[source_quality_tier(paper)]
         return s
 
     return sorted(papers, key=score, reverse=True)
 
 
 async def merger_node(state: ResearchState) -> dict:
-    """Dedup, rank, and decide next phase."""
+    """Dedup, rank by quality tier + citations, and decide next phase."""
     papers = state.get("papers", [])
     query = state["query"]
     round_num = state["round"]
     max_rounds = state["max_rounds"]
+
+    callback = state.get("progress_callback")
 
     papers = deduplicate_papers(papers)
     papers = rank_papers(papers, query)
@@ -57,10 +76,10 @@ async def merger_node(state: ResearchState) -> dict:
     top_k = 20
     papers = papers[:top_k]
 
-    if round_num >= max_rounds:
-        next_status = "synthesizing"
-    else:
-        next_status = "searching"
+    if callback:
+        callback("merger", {"papers_after_filter": len(papers)})
+
+    next_status = "synthesizing" if round_num >= max_rounds else "searching"
 
     return {
         "papers": papers,

@@ -1,50 +1,41 @@
 #!/bin/bash
-# Hilbert One-Command Installer
-# Run: curl -fsSL https://hilbert.ai/install | bash
-# Or:   npm install -g hilbert
+# Hilbert Installer - curl -fsSL https://raw.githubusercontent.com/adityasai1234/hilbert-cli/main/install.sh | bash
 
 set -e
 
-echo "Installing Hilbert..."
+# Detect OS
+OS="$(uname -s)"
+ARCH="$(uname -m)"
+
+echo "🔬 Installing Hilbert..."
 
 # Check Node.js
 if ! command -v node &> /dev/null; then
-    echo "Error: Node.js not found. Install from https://nodejs.org"
+    echo "Error: Node.js required. Install from nodejs.org"
     exit 1
 fi
 
-# Check Python
-if ! command -v python3 &> /dev/null; then
-    echo "Error: Python 3 not found"
-    exit 1
-fi
+# Create temp dir
+TEMP=$(mktemp -d)
+trap "rm -rf $TEMP" EXIT
+
+# Clone repo
+echo "📦 Fetching Hilbert..."
+git clone --depth 1 https://github.com/adityasai1234/hilbert-cli.git "$TEMP/hilbert" 2>/dev/null
 
 # Install Python backend
-echo "Installing Python backend..."
-cd /Users/medow/Documents/hilbert 2>/dev/null || cd "$(dirname "$0")/.."
-if [ -f "pyproject.toml" ]; then
-    pip install -e . 2>/dev/null || pip3 install -e .
-fi
+cd "$TEMP/hilbert"
+pip install -e . 2>/dev/null || true
 
-# Install Node CLI
-echo "Installing CLI..."
-cd "$(dirname "$0")"
-if [ -f "package.json" ]; then
-    npm install
-    npm run build
-    
-    # Link globally
-    if command -v npm &> /dev/null; then
-        npm link
-    fi
-fi
+# Build CLI
+cd cli
+npm install --silent 2>/dev/null || npm install
+npm run build
 
-echo ""
-echo "✓ Hilbert installed successfully!"
-echo ""
-echo "Usage:"
-echo "  hilbert --help                    # Show help"
-echo "  hilbert \"quantum computing\"      # One-shot research"
-echo "  hilbert interactive               # Start REPL"
-echo "  hilbert doctor                   # Check installation"
-echo ""
+# Install
+mkdir -p "$HOME/.hilbert"
+cp -r . "$HOME/.hilbert/"
+mkdir -p "$HOME/.local/bin"
+ln -sf "$HOME/.hilbert/bin/hilbert.js" "$HOME/.local/bin/hilbert"
+
+echo "✅ Installed! Run: hilbert --help"

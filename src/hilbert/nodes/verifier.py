@@ -4,7 +4,7 @@ from typing import List
 
 from hilbert.config.settings import get_settings
 from hilbert.models import Finding, Paper
-from hilbert.sources import cosine_similarity, get_embedding_client
+from hilbert.sources import cosine_similarity, compute_similarities, get_embedding_client
 from hilbert.state.research import ResearchState
 
 
@@ -51,30 +51,6 @@ async def verifier_node(state: ResearchState) -> dict:
         "findings": findings,
         "status": "writing",
     }
-
-
-async def compute_similarities(
-    claims: List[str],
-    contexts: List[str],
-    client,
-) -> List[float]:
-    """Compute cosine similarities between claims and contexts."""
-    if not claims or not contexts:
-        return []
-
-    claim_embeddings = await client.embed_texts(claims)
-    context_embeddings = await client.embed_texts(contexts)
-
-    similarities = []
-    for claim_emb in claim_embeddings:
-        best_sim = 0.0
-        for ctx_emb in context_embeddings:
-            sim = cosine_similarity(claim_emb, ctx_emb)
-            if sim > best_sim:
-                best_sim = sim
-        similarities.append(best_sim)
-
-    return similarities
 
 
 def create_verifier_node():

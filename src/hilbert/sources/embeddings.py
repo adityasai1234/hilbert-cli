@@ -118,6 +118,21 @@ async def compute_similarities(
     return similarities
 
 
+async def embed_papers(papers: list, client: Optional[EmbeddingClient] = None) -> List[List[float]]:
+    """Embed a list of Paper objects using title + abstract.
+
+    Returns one embedding vector per paper, in the same order.
+    Falls back to a zero vector on failure so callers don't need to handle None.
+    """
+    client = client or get_embedding_client()
+    texts = [f"{p.title}. {p.abstract}"[:2000] for p in papers]  # cap at 2k chars
+    try:
+        return await client.embed_texts(texts)
+    except Exception:
+        dim = 1536  # text-embedding-3-small dimensionality
+        return [[0.0] * dim for _ in papers]
+
+
 _client: Optional[EmbeddingClient] = None
 
 

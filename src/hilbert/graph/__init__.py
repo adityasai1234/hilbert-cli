@@ -19,6 +19,7 @@ from hilbert.nodes import (
     verifier_node,
     writer_node,
 )
+from hilbert.nodes.hypothesis import hypothesis_node
 from hilbert.state.research import ResearchState, create_initial_state
 
 
@@ -48,6 +49,7 @@ def create_research_graph():
     graph.add_node("verifier", verifier_node)            # assigns confidence scores
     graph.add_node("reviewer", reviewer_node)            # sees verified + contradiction data
     graph.add_node("writer", writer_node)
+    graph.add_node("hypothesis", hypothesis_node)        # generates novel research questions
 
     graph.add_edge(START, "planner")
     graph.add_edge("planner", "search")
@@ -64,7 +66,8 @@ def create_research_graph():
     graph.add_edge("contradiction", "verifier")
     graph.add_edge("verifier", "reviewer")
     graph.add_edge("reviewer", "writer")
-    graph.add_edge("writer", END)
+    graph.add_edge("writer", "hypothesis")
+    graph.add_edge("hypothesis", END)
 
     return graph.compile()
 

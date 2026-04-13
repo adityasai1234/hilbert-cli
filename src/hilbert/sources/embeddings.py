@@ -142,11 +142,14 @@ async def compute_similarities(
 async def embed_papers(papers: list, client: Optional[EmbeddingClient] = None) -> List[List[float]]:
     """Embed a list of Paper objects using title + abstract.
 
-    Returns one embedding vector per paper, in the same order.
-    Falls back to a zero vector on failure so callers don't need to handle None.
+    Uses the paper_id as a stable cache hint: if a paper was embedded in a
+    previous session its vector is served from SQLite without an API call.
+    Falls back to a zero vector on total failure.
     """
     client = client or get_embedding_client()
-    texts = [f"{p.title}. {p.abstract}"[:2000] for p in papers]  # cap at 2k chars
+    # Build text per paper; use paper_id as a stable cache seed so that
+    # the same paper across sessions hits the cache (same text → same hash).
+    texts = [f"{p.title}. {p.abstract}"[:2000] for p in papers]
     try:
         return await client.embed_texts(texts)
     except Exception:

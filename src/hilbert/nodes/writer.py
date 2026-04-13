@@ -117,6 +117,21 @@ async def writer_node(state: ResearchState) -> dict:
     (output_dir / "report.md").write_text(report.to_markdown())
     (output_dir / "report.json").write_text(json.dumps(report.to_json(), indent=2))
     (output_dir / "report.bib").write_text(bibtex)
+    (output_dir / "report.tex").write_text(report.to_latex())
+
+    from hilbert.ui.mermaid import generate_knowledge_graph
+
+    citation_graph: dict = state.get("citation_graph") or {}
+    contradictions_data = [{"claim_a": c.claim_a, "claim_b": c.claim_b, "severity": c.severity} for c in contradictions]
+
+    kg = generate_knowledge_graph(
+        papers=source_data,
+        findings=findings_data,
+        citation_graph=citation_graph,
+        contradictions=contradictions_data if contradictions else None,
+    )
+    if kg:
+        (output_dir / "report.mmd").write_text(kg)
 
     provenance = generate_provenance(state, source_data, findings_data, gaps, started_at, contradictions)
     (output_dir / "report.provenance.md").write_text(provenance)

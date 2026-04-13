@@ -87,11 +87,39 @@ async def run_research(
     query: str,
     max_rounds: int = 3,
     progress_callback: Optional[Callable[[str, Dict[str, Any]], None]] = None,
+    incremental: bool = False,
+    session_id: Optional[str] = None,
 ):
-    """Run a full research workflow and return the final state."""
+    """Run a full research workflow and return the final state.
+
+    Args:
+        query: Research query.
+        max_rounds: Number of research rounds.
+        progress_callback: Optional callback for progress updates.
+        incremental: If True, resume from prior session to fetch only new papers.
+        session_id: Session ID to resume (required if incremental=True).
+    """
+    from hilbert.persistence.manager import get_session_manager
+
+    initial_state: ResearchState
+
+    if incremental and session_id:
+        manager = get_session_manager()
+        checkpoint = manager.get_latest_checkpoint(session_id)
+        if checkpoint:
+            checkpoint["incremental_since"] = checkpoint.get("started_at")
+            checkpoint["prior_session_id"] = session_id
+            checkpoint["progress_callback"] = progress_callback
+            initial_state = checkpoint
+        else:
+            initial_state = create_initial_state(
+                query, max_rounds=max_rounds, progress_callback=progress_callback
+            )
+    else:
+        initial_state = create_initial_state(
+            query, max_rounds=max_rounds, progress_callback=progress_callback
+        )
+
     graph = get_research_graph()
-    initial_state = create_initial_state(
-        query, max_rounds=max_rounds, progress_callback=progress_callback
-    )
     result = await graph.ainvoke(initial_state)
     return result

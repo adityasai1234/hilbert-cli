@@ -43,9 +43,12 @@ program
 program
   .command('sessions')
   .description('Manage research sessions')
-  .action(async () => {
+  .option('-t, --tag <tag>', 'Filter by tag')
+  .option('-s, --status <status>', 'Filter by status (planning, searching, done, etc.)')
+  .option('--since <iso-date>', 'Filter sessions created after this date')
+  .action(async (options) => {
     const { listSessions } = await import('./commands/sessions');
-    await listSessions();
+    await listSessions(options);
   });
 
 program
@@ -62,6 +65,25 @@ program
   .action(async () => {
     const { runDoctor } = await import('./commands/doctor');
     await runDoctor();
+  });
+
+program
+  .command('continue <session-id>')
+  .description('Continue a previous research session')
+  .option('-r, --rounds <number>', 'Additional research rounds', '1')
+  .option('-m, --model <model>', 'LLM model to use')
+  .action(async (sessionId, options) => {
+    const { runContinue } = await import('./commands/continue');
+    await runContinue(sessionId, { ...program.opts(), ...options });
+  });
+
+program
+  .command('diff <session-a> <session-b>')
+  .description('Compare two research sessions semantically')
+  .option('-v, --verbose', 'Show detailed differences')
+  .action(async (sessionA, sessionB, options) => {
+    const { runDiff } = await import('./commands/diff');
+    await runDiff(sessionA, sessionB, options);
   });
 
 program

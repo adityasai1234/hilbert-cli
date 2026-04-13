@@ -38,6 +38,8 @@ class ResearchState(TypedDict):
     findings_centroid: Optional[List[float]]   # mean embedding of findings after last round
     converged: bool                            # True if early-stopped by convergence
     hypotheses: List[Hypothesis]               # novel hypotheses generated from findings
+    prior_session_id: Optional[str]            # set when continuing an existing session
+    incremental_since: Optional[datetime]      # only fetch papers newer than this date
     progress_callback: Optional[Callable[[str, Dict[str, Any]], None]]
 
 
@@ -65,5 +67,7 @@ def create_initial_state(
         "findings_centroid": None,
         "converged": False,
         "hypotheses": [],
+        "prior_session_id": None,
+        "incremental_since": None,
         "progress_callback": progress_callback,
     }

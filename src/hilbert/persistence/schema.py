@@ -22,8 +22,9 @@ class SessionTable(Base):
     status = Column(String, default="planning")
     created_at = Column(DateTime, nullable=False)
     updated_at = Column(DateTime, nullable=False)
-    last_searched_at = Column(DateTime, nullable=True)   # set after each search phase
+    last_searched_at = Column(DateTime, nullable=True)
     error_message = Column(Text, nullable=True)
+    tags = Column(JSON, nullable=True)  # list of tag strings, e.g. ["important", "review"]
 
 
 class PaperTable(Base):

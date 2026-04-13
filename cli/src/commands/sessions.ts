@@ -1,11 +1,22 @@
 import chalk from 'chalk';
 import { ipcClient } from '../ipc/index.js';
 
-export async function listSessions(): Promise<void> {
+export interface SessionFilters {
+  tag?: string;
+  status?: string;
+  since?: string;
+}
+
+export async function listSessions(filters?: SessionFilters): Promise<void> {
   try {
     await ipcClient.connect();
 
-    const result = await ipcClient.sendCommand('sessions', ['list'], {});
+    const options: Record<string, string> = {};
+    if (filters?.tag) options.tag = filters.tag;
+    if (filters?.status) options.status = filters.status;
+    if (filters?.since) options.since = filters.since;
+
+    const result = await ipcClient.sendCommand('sessions', ['list'], options);
 
     if (result.type === 'response') {
       const sessions = result.result as Array<{
@@ -13,6 +24,7 @@ export async function listSessions(): Promise<void> {
         query: string;
         status: string;
         created_at: string;
+        tags?: string[];
       }>;
 
       if (sessions.length === 0) {
@@ -21,7 +33,8 @@ export async function listSessions(): Promise<void> {
         console.log(chalk.bold('\n  Sessions:\n'));
         sessions.forEach(session => {
           const statusColor = session.status === 'done' ? chalk.green : chalk.yellow;
-          console.log(`  ${chalk.cyan(session.id.slice(0, 8))} ${statusColor(session.status)} ${chalk.gray(session.query.slice(0, 50))}`);
+          const tagStr = session.tags?.length ? chalk.gray(` [${session.tags.join(', ')}]`) : '';
+          console.log(`  ${chalk.cyan(session.id.slice(0, 8))} ${statusColor(session.status)} ${chalk.gray(session.query.slice(0, 40))}${tagStr}`);
         });
         console.log();
       }

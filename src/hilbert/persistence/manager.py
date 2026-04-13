@@ -79,19 +79,38 @@ class SessionManager:
                     created_at=row.created_at,
                     updated_at=row.updated_at,
                     error_message=row.error_message,
+                    tags=row.tags or [],
                 )
         except Exception as e:
             raise SessionManagerError(f"Failed to get session: {e}") from e
 
-    def list_sessions(self) -> List[Session]:
-        """List all sessions."""
+    def list_sessions(
+        self,
+        tags: Optional[List[str]] = None,
+        status: Optional[str] = None,
+        since: Optional[datetime] = None,
+    ) -> List[Session]:
+        """List sessions with optional filters.
+
+        Args:
+            tags: Filter by tags (any match).
+            status: Filter by status string.
+            since: Filter to sessions created after this time.
+        """
         try:
             with SqlSession(self.engine) as db:
-                rows = db.execute(
-                    select(SessionTable).order_by(SessionTable.created_at.desc())
-                ).scalars().all()
-                return [
-                    Session(
+                query = select(SessionTable).order_by(SessionTable.created_at.desc())
+
+                if since:
+                    query = query.where(SessionTable.created_at >= since)
+                if status:
+                    query = query.where(SessionTable.status == status)
+
+                rows = db.execute(query).scalars().all()
+
+                sessions = []
+                for r in rows:
+                    session = Session(
                         session_id=r.session_id,
                         query=r.query,
                         max_rounds=r.max_rounds,
@@ -100,9 +119,16 @@ class SessionManager:
                         created_at=r.created_at,
                         updated_at=r.updated_at,
                         error_message=r.error_message,
+                        tags=r.tags or [],
                     )
-                    for r in rows
-                ]
+
+                    if tags:
+                        if any(t in (session.tags or []) for t in tags):
+                            sessions.append(session)
+                    else:
+                        sessions.append(session)
+
+                return sessions
         except Exception as e:
             raise SessionManagerError(f"Failed to list sessions: {e}") from e
 
@@ -140,9 +166,40 @@ class SessionManager:
                     created_at=row.created_at,
                     updated_at=row.updated_at,
                     error_message=row.error_message,
+                    tags=row.tags or [],
                 )
         except Exception as e:
             raise SessionManagerError(f"Failed to query session by query: {e}") from e
+
+    def add_tag(self, session_id: str, tag: str) -> None:
+        """Add a tag to a session."""
+        try:
+            with SqlSession(self.engine) as db:
+                row = db.get(SessionTable, session_id)
+                if row:
+                    tags = row.tags or []
+                    if tag not in tags:
+                        tags.append(tag)
+                        row.tags = tags
+                        row.updated_at = datetime.now()
+                        db.commit()
+        except Exception as e:
+            raise SessionManagerError(f"Failed to add tag: {e}") from e
+
+    def remove_tag(self, session_id: str, tag: str) -> None:
+        """Remove a tag from a session."""
+        try:
+            with SqlSession(self.engine) as db:
+                row = db.get(SessionTable, session_id)
+                if row:
+                    tags = row.tags or []
+                    if tag in tags:
+                        tags.remove(tag)
+                        row.tags = tags
+                        row.updated_at = datetime.now()
+                        db.commit()
+        except Exception as e:
+            raise SessionManagerError(f"Failed to remove tag: {e}") from e
 
     def update_last_searched_at(self, session_id: str) -> None:
         """Stamp the session with the current time as last_searched_at."""

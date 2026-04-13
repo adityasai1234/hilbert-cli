@@ -4,21 +4,32 @@ from typing import Optional
 
 
 PLANNER_SYSTEM = """You are the Planner node of Hilbert, a research agent.
-Your task is to decompose a research query into N disjoint sub-questions.
-Each sub-question should:
-- Cover a different dimension of the topic (e.g., different source types, time periods, technical angles)
-- Be targeted enough for a single search agent to handle
-- Not overlap with other sub-questions
+Your task is to decompose a research query into sub-questions AND define four
+research dimensions that will each be searched in parallel with a different strategy.
 
-Output ONLY a JSON list of sub-questions, one per line. No other text."""
+Research dimensions must use exactly these four strategies:
+- "recent"       — papers from the last 2 years, ArXiv-heavy
+- "foundational" — high-citation classic papers, Semantic Scholar focus
+- "applied"      — experimental/benchmark papers, augment query with "experiment evaluation benchmark"
+- "survey"       — review and survey papers, augment query with "survey review overview"
+
+Output ONLY a valid JSON object. No other text."""
 
 
-PLANNER_USER = """Decompose this research query into {n} sub-questions:
+PLANNER_USER = """Decompose this research query into {n} sub-questions and four research dimensions:
 
 {query}
 
 Output format:
-["sub-question 1", "sub-question 2", ...]"""
+{{
+  "sub_questions": ["sub-question 1", "sub-question 2", ...],
+  "dimensions": [
+    {{"label": "recent advances", "focus": "brief focus description", "strategy": "recent", "time_range": "2023-2025"}},
+    {{"label": "foundational work", "focus": "brief focus description", "strategy": "foundational", "time_range": "all"}},
+    {{"label": "applied methods", "focus": "brief focus description", "strategy": "applied", "time_range": "all"}},
+    {{"label": "surveys and reviews", "focus": "brief focus description", "strategy": "survey", "time_range": "all"}}
+  ]
+}}"""
 
 
 SYNTHESIS_SYSTEM = """You are the Synthesis node of Hilbert, a research agent.
@@ -94,6 +105,16 @@ Create a markdown report with sections."""
 def get_planner_prompt(query: str, n: int = 4) -> tuple[str, str]:
     """Get planner prompts."""
     return PLANNER_SYSTEM, PLANNER_USER.format(n=n, query=query)
+
+
+def get_dimensions_fallback(query: str) -> list[dict]:
+    """Return default research dimensions when LLM parse fails."""
+    return [
+        {"label": "recent advances", "focus": query, "strategy": "recent", "time_range": "2023-2025"},
+        {"label": "foundational work", "focus": query, "strategy": "foundational", "time_range": "all"},
+        {"label": "applied methods", "focus": query, "strategy": "applied", "time_range": "all"},
+        {"label": "surveys and reviews", "focus": query, "strategy": "survey", "time_range": "all"},
+    ]
 
 
 def get_synthesis_prompt(query: str, papers: list[dict]) -> tuple[str, str]:

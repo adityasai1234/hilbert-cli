@@ -22,6 +22,7 @@ class SessionTable(Base):
     status = Column(String, default="planning")
     created_at = Column(DateTime, nullable=False)
     updated_at = Column(DateTime, nullable=False)
+    last_searched_at = Column(DateTime, nullable=True)   # set after each search phase
     error_message = Column(Text, nullable=True)
 
 

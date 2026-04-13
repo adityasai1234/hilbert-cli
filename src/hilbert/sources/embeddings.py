@@ -24,16 +24,37 @@ class EmbeddingClient:
         self._client = None
 
     async def embed_texts(self, texts: List[str]) -> List[List[float]]:
-        """Get embeddings for texts."""
+        """Get embeddings for texts, using SQLite cache to avoid redundant API calls."""
         if not texts:
             return []
 
-        if self.model.startswith("openai"):
-            return await self._embed_openai(texts)
-        elif self.model.startswith("ollama"):
-            return await self._embed_ollama(texts)
-        else:
-            return await self._embed_openai(texts)
+        # --- cache lookup ---
+        try:
+            from hilbert.persistence.manager import get_embedding_cache
+            cache = get_embedding_cache()
+            cached = cache.get_batch(texts)
+        except Exception:
+            cache = None
+            cached = {t: None for t in texts}
+
+        miss_indices = [i for i, t in enumerate(texts) if cached[t] is None]
+        miss_texts = [texts[i] for i in miss_indices]
+
+        if miss_texts:
+            if self.model.startswith("openai"):
+                fresh = await self._embed_openai(miss_texts)
+            elif self.model.startswith("ollama"):
+                fresh = await self._embed_ollama(miss_texts)
+            else:
+                fresh = await self._embed_openai(miss_texts)
+
+            if cache:
+                cache.set_batch(miss_texts, fresh)
+
+            for idx, emb in zip(miss_indices, fresh):
+                cached[texts[idx]] = emb
+
+        return [cached[t] for t in texts]
 
     async def _embed_openai(self, texts: List[str]) -> List[List[float]]:
         """Get embeddings from OpenAI."""

@@ -14,6 +14,7 @@ from hilbert.nodes import (
     search_node,
     merger_node,
     synthesis_node,
+    contradiction_node,
     reviewer_node,
     verifier_node,
     writer_node,
@@ -43,8 +44,9 @@ def create_research_graph():
     graph.add_node("search", search_node)
     graph.add_node("merger", merger_node)
     graph.add_node("synthesis", synthesis_node)
-    graph.add_node("verifier", verifier_node)   # runs first: assigns confidence scores
-    graph.add_node("reviewer", reviewer_node)   # runs second: sees verified findings
+    graph.add_node("contradiction", contradiction_node)  # detects conflicting claims
+    graph.add_node("verifier", verifier_node)            # assigns confidence scores
+    graph.add_node("reviewer", reviewer_node)            # sees verified + contradiction data
     graph.add_node("writer", writer_node)
 
     graph.add_edge(START, "planner")
@@ -57,8 +59,9 @@ def create_research_graph():
         ["planner", "synthesis"],
     )
 
-    # Sequential verification chain (was parallel before)
-    graph.add_edge("synthesis", "verifier")
+    # synthesis → contradiction → verifier → reviewer → writer
+    graph.add_edge("synthesis", "contradiction")
+    graph.add_edge("contradiction", "verifier")
     graph.add_edge("verifier", "reviewer")
     graph.add_edge("reviewer", "writer")
     graph.add_edge("writer", END)

@@ -3,6 +3,7 @@
 import datetime
 from typing import List
 
+from hilbert.config.settings import get_settings
 from hilbert.models import Paper
 from hilbert.sources import cosine_similarity, embed_papers, get_embedding_client
 from hilbert.state.research import ResearchState
@@ -102,8 +103,63 @@ async def semantic_deduplicate(papers: List[Paper]) -> List[Paper]:
     return [p for i, p in enumerate(papers) if i in kept_set]
 
 
+async def mmr_select(
+    papers: List[Paper],
+    query: str,
+    k: int,
+    lam: float = 0.6,
+) -> List[Paper]:
+    """Select k papers via Maximum Marginal Relevance.
+
+    Balances relevance to the query (weight λ) against diversity from
+    already-selected papers (weight 1-λ). Falls back to score-ranked
+    top-k if embedding fails.
+    """
+    if len(papers) <= k:
+        return papers
+
+    try:
+        client = get_embedding_client()
+        paper_embs = await embed_papers(papers, client)
+        query_embs = await client.embed_texts([query])
+        query_emb = query_embs[0]
+    except Exception:
+        return papers[:k]
+
+    relevance = [cosine_similarity(e, query_emb) for e in paper_embs]
+
+    selected_indices: List[int] = []
+    remaining = list(range(len(papers)))
+
+    while len(selected_indices) < k and remaining:
+        best_idx = None
+        best_score = float("-inf")
+
+        for i in remaining:
+            rel = lam * relevance[i]
+            if selected_indices:
+                max_sim = max(
+                    cosine_similarity(paper_embs[i], paper_embs[j])
+                    for j in selected_indices
+                )
+                div = (1 - lam) * max_sim
+            else:
+                div = 0.0
+            score = rel - div
+            if score > best_score:
+                best_score = score
+                best_idx = i
+
+        if best_idx is not None:
+            selected_indices.append(best_idx)
+            remaining.remove(best_idx)
+
+    return [papers[i] for i in selected_indices]
+
+
 async def merger_node(state: ResearchState) -> dict:
-    """Exact dedup → semantic dedup → rank → decide next phase."""
+    """Exact dedup → semantic dedup → rank → MMR select → decide next phase."""
+    settings = get_settings()
     papers = state.get("papers", [])
     query = state["query"]
     round_num = state["round"]
@@ -115,8 +171,8 @@ async def merger_node(state: ResearchState) -> dict:
     papers = await semantic_deduplicate(papers)
     papers = rank_papers(papers, query)
 
-    top_k = 20
-    papers = papers[:top_k]
+    top_k = settings.top_k
+    papers = await mmr_select(papers, query, k=top_k, lam=settings.mmr_lambda)
 
     if callback:
         callback("merger", {

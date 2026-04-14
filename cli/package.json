@@ -1,8 +1,8 @@
 {
   "name": "hilbert",
-  "version": "0.2.0",
-  "description": "CLI research agent for academic researchers",
-  "main": "dist/index.js",
+  "version": "1.0.0",
+  "description": "AI-powered CLI research agent for academic researchers - searches ArXiv, Semantic Scholar, extracts findings, detects contradictions, and generates reports",
+  "main": "",
   "bin": {
     "hilbert": "./bin/hilbert.js"
   },
@@ -10,17 +10,18 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "dev": "tsx src/index.ts",
-    "link": "npm link",
-    "install:global": "npm link",
-    "postinstall": "npm run build && npm link",
     "test": "vitest"
   },
   "keywords": [
     "research",
     "cli",
+    "ai",
     "academic",
     "arxiv",
-    "literature"
+    "semantic-scholar",
+    "literature-review",
+    "llm",
+    "agent"
   ],
   "author": "Hilbert <hello@hilbert.ai>",
   "license": "MIT",
@@ -50,5 +51,6 @@
   },
   "engines": {
     "node": ">=18.0.0"
-  }
+  },
+  "preferGlobal": true
 }

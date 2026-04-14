@@ -1,0 +1,14 @@
+export const FINDING_DEDUP_THRESHOLD = 0.88;
+export const CONTRADICTION_THRESHOLD = 0.15;
+export const SEMANTIC_DEDUP_THRESHOLD = 0.92;
+export const CONVERGENCE_THRESHOLD = 0.90;
+export const CHUNK_SIZE = 4;
+export const MMR_LAMBDA = 0.6;
+export const CITATION_AUTHORITY_WEIGHT = 1.5;
+export const ARXIV_RATE_LIMIT_MS = 3000;
+export const MAX_CONTRADICTION_PAIRS = 10;
+export const MAX_PAPERS_PER_SOURCE = 50;
+export const MAX_ABSTRACT_LENGTH = 2000;
+export const MIN_CLAIM_LENGTH = 20;
+export const DEFAULT_TEMPERATURE = 0.7;
+export const DEFAULT_MAX_TOKENS = 4096;

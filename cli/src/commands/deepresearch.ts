@@ -1,7 +1,8 @@
 import chalk from 'chalk';
 import ora from 'ora';
-import { ipcClient, StreamEvent } from '../ipc/index.js';
-import { handleError, printSuccess, printError } from '../errors.js';
+import { runResearch as tsRunResearch } from '../core/research.js';
+import { printSuccess, printError } from '../errors.js';
+import { ensureDirs } from '../core/config.js';
 
 export interface ResearchOptions {
   rounds?: string;
@@ -12,7 +13,6 @@ export interface ResearchOptions {
   confidence?: string;
 }
 
-// Human-readable labels for each pipeline node
 const NODE_LABELS: Record<string, string> = {
   planner:   'Planning research dimensions',
   search:    'Searching papers',
@@ -21,17 +21,18 @@ const NODE_LABELS: Record<string, string> = {
   verifier:  'Verifying claims',
   reviewer:  'Reviewing coverage & integrity',
   writer:    'Writing report',
+  hypothesis: 'Generating hypotheses',
 };
 
 function nodeLabel(node: string): string {
   return NODE_LABELS[node] ?? `Running ${node}`;
 }
 
-function nodeDetail(event: StreamEvent): string {
+function nodeDetail(event: Record<string, unknown>): string {
   const parts: string[] = [];
   if (event.round !== undefined) parts.push(`round ${event.round}`);
-  if (event.papers_found !== undefined) parts.push(`${event.papers_found} papers`);
-  if (event.findings !== undefined) parts.push(`${event.findings.length} findings`);
+  if (event.papers !== undefined) parts.push(`${event.papers} papers`);
+  if (event.findings !== undefined) parts.push(`${event.findings} findings`);
   return parts.length ? chalk.gray(` (${parts.join(', ')})`) : '';
 }
 
@@ -48,52 +49,41 @@ export async function runResearch(
 
   console.log(chalk.cyan(`\n  Research topic: ${topic}\n`));
 
-  const spinner = ora(chalk.cyan('Connecting...')).start();
+  ensureDirs();
+
+  const spinner = ora(chalk.cyan('Planning...')).start();
+
+  const progressCallback = (node: string, data: Record<string, unknown>) => {
+    spinner.text = chalk.cyan(nodeLabel(node)) + nodeDetail(data);
+  };
 
   try {
-    await ipcClient.connect();
-
-    spinner.text = chalk.cyan('Planning...');
-
-    // Register stream handler before sending the command so no events are missed
-    const msgId = `msg_${Date.now()}_${Math.random().toString(36).slice(2)}`;
-    ipcClient.onStream(msgId, (event: StreamEvent) => {
-      const node = event.current_node ?? event.status ?? '';
-      if (node) {
-        spinner.text = chalk.cyan(nodeLabel(node)) + nodeDetail(event);
-      }
-    });
-
-    const result = await ipcClient.sendCommand('deepresearch', [topic], {
+    const result = await tsRunResearch(topic, {
       rounds: parseInt(options.rounds || '3'),
       model: options.model,
       output: options.output,
       subQuestions: parseInt(options.subQuestions || '4'),
       topK: parseInt(options.topK || '20'),
       confidence: parseFloat(options.confidence || '0.75'),
-    }, msgId);
+    }, progressCallback);
 
-    if (result.type === 'response') {
-      spinner.succeed(chalk.green('Research complete!'));
+    spinner.succeed(chalk.green('Research complete!'));
 
-      const res = result.result as { files?: string[]; report_id?: string };
-      if (res?.files) {
-        console.log(chalk.cyan('\n  Generated files:'));
-        res.files.forEach(file => {
-          console.log(chalk.gray(`    - ${file}`));
-        });
-      }
-      console.log();
-      printSuccess('Report generated successfully');
-    } else if (result.type === 'error') {
-      spinner.fail(chalk.red('Research failed'));
-      printError('E002', result.error || 'Unknown error');
+    if (result.report) {
+      console.log(chalk.cyan('\n  Generated files:'));
+      console.log(chalk.gray('    - report.md'));
+      console.log(chalk.gray('    - report.json'));
+      console.log(chalk.gray('    - report.bib'));
+      console.log(chalk.gray('    - report.tex'));
+      console.log(chalk.gray('    - report.provenance.md'));
     }
+    console.log();
+    printSuccess('Report generated successfully');
   } catch (err) {
-    spinner.fail(chalk.red('Failed to start research'));
-    handleError(err);
+    spinner.fail(chalk.red('Research failed'));
+    const error = err as Error;
+    printError('E002', error.message || 'Unknown error');
   }
 
-  ipcClient.disconnect();
   setTimeout(() => process.exit(0), 500);
 }

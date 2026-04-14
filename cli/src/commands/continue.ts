@@ -1,7 +1,8 @@
 import chalk from 'chalk';
 import ora from 'ora';
-import { ipcClient, StreamEvent } from '../ipc/index.js';
-import { handleError, printSuccess, printError } from '../errors.js';
+import { continueResearch as tsContinueResearch } from '../core/research.js';
+import { printSuccess, printError } from '../errors.js';
+import { ensureDirs } from '../core/config.js';
 
 export interface ContinueOptions {
   rounds?: string;
@@ -16,6 +17,7 @@ const NODE_LABELS: Record<string, string> = {
   verifier:  'Verifying claims',
   reviewer:  'Reviewing coverage & integrity',
   writer:    'Writing report',
+  hypothesis: 'Generating hypotheses',
 };
 
 function nodeLabel(node: string): string {
@@ -35,52 +37,39 @@ export async function runContinue(
 
   console.log(chalk.cyan(`\n  Continuing session: ${sessionId}\n`));
 
-  const spinner = ora(chalk.cyan('Connecting...')).start();
+  ensureDirs();
+
+  const spinner = ora(chalk.cyan('Resuming session...')).start();
+
+  const progressCallback = (node: string, data: Record<string, unknown>) => {
+    spinner.text = chalk.cyan(nodeLabel(node));
+  };
 
   try {
-    await ipcClient.connect();
-
-    spinner.text = chalk.cyan('Resuming session...');
-
-    const msgId = `msg_${Date.now()}_${Math.random().toString(36).slice(2)}`;
-    ipcClient.onStream(msgId, (event: StreamEvent) => {
-      const node = event.current_node ?? event.status ?? '';
-      if (node) {
-        spinner.text = chalk.cyan(nodeLabel(node));
-      }
-    });
-
-    const result = await ipcClient.sendCommand('continue', [sessionId], {
+    const result = await tsContinueResearch(sessionId, {
       rounds: parseInt(options.rounds || '1'),
       model: options.model,
-    }, msgId);
+    }, progressCallback);
 
-    if (result.type === 'response') {
-      const res = result.result as { incremental?: boolean; files?: string[] };
-      spinner.succeed(chalk.green('Session continued!'));
+    spinner.succeed(chalk.green('Session continued!'));
 
-      if (res?.incremental) {
-        console.log(chalk.gray('  Incremental mode: only fetched new papers since last run'));
-      }
+    console.log(chalk.gray('  Incremental mode: only fetched new papers since last run'));
 
-      const files = res?.files;
-      if (files) {
-        console.log(chalk.cyan('\n  Updated files:'));
-        files.forEach(file => {
-          console.log(chalk.gray(`    - ${file}`));
-        });
-      }
-      console.log();
-      printSuccess('Report updated successfully');
-    } else if (result.type === 'error') {
-      spinner.fail(chalk.red('Failed to continue session'));
-      printError('E002', result.error || 'Unknown error');
+    if (result.report) {
+      console.log(chalk.cyan('\n  Updated files:'));
+      console.log(chalk.gray('    - report.md'));
+      console.log(chalk.gray('    - report.json'));
+      console.log(chalk.gray('    - report.bib'));
+      console.log(chalk.gray('    - report.tex'));
+      console.log(chalk.gray('    - report.provenance.md'));
     }
+    console.log();
+    printSuccess('Report updated successfully');
   } catch (err) {
-    spinner.fail(chalk.red('Failed to connect'));
-    handleError(err);
+    spinner.fail(chalk.red('Failed to continue session'));
+    const error = err as Error;
+    printError('E002', error.message || 'Unknown error');
   }
 
-  ipcClient.disconnect();
   setTimeout(() => process.exit(0), 500);
 }
